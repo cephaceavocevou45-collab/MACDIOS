@@ -8,14 +8,27 @@ jobs:
   backend:
     name: Tests, couverture et Ruff
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_DB: gestion_commerce_ci
+          POSTGRES_USER: ci_test_user
+          POSTGRES_PASSWORD: ci_test_password_not_for_production
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ci_test_user -d gestion_commerce_ci"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     defaults:
       run:
         working-directory: backend
     env:
-      SECRET_KEY: cle-ci-sans-valeur-de-production
+      SECRET_KEY: test-only-ci-secret-not-for-production
       DEBUG: "True"
-      DB_ENGINE: sqlite
-      KKIAPAY_SANDBOX: "True"
+      DATABASE_URL: postgresql://ci_test_user:ci_test_password_not_for_production@localhost:5432/gestion_commerce_ci
     steps:
       - name: Récupérer le dépôt
         uses: actions/checkout@v4
