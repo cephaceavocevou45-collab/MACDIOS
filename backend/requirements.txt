@@ -1,0 +1,15 @@
+Django>=5.0,<6.0
+djangorestframework>=3.15,<4.0
+djangorestframework-simplejwt>=5.3,<6.0
+django-cors-headers>=4.4,<5.0
+python-decouple>=3.8,<4.0
+dj-database-url>=2.3,<3.0
+psycopg2-binary>=2.9.10,<3.0
+django-cloudinary-storage>=0.3.0,<1.0
+drf-spectacular>=0.28,<1.0
+gunicorn>=23,<24
+whitenoise>=6.9,<7
+django-axes[ipware]>=8.3,<9
+sentry-sdk[django]>=2.30,<3
+reportlab>=4.2,<5
+qrcode[pil]>=8.2,<9

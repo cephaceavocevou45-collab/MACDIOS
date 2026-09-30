@@ -1,0 +1,14 @@
+{% extends "admin/base_site.html" %}
+{% load i18n %}
+{% block content %}
+  <h1>{{ titre }}</h1>
+  <p>Le motif sera envoyé par email au commerçant concerné.</p>
+  <form method="post">
+    {% csrf_token %}
+    {{ form.as_p }}
+    {% for identifiant in ids %}<input type="hidden" name="_selected_action" value="{{ identifiant }}">{% endfor %}
+    <input type="hidden" name="action" value="rejeter_selection">
+    <button type="submit" name="confirmer_rejet" value="1" class="default">Confirmer le rejet</button>
+    <a href="../">Annuler</a>
+  </form>
+{% endblock %}

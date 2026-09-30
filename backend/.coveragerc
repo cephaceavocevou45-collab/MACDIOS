@@ -1,0 +1,13 @@
+[run]
+source =
+    commerce
+    notifications
+omit =
+    */test_*.py
+    */tests.py
+    */migrations/*
+
+[report]
+show_missing = True
+skip_covered = True
+fail_under = 80

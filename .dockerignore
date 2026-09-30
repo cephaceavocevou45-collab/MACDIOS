@@ -1,0 +1,15 @@
+**/.git
+**/.venv
+**/venv
+**/node_modules
+**/dist
+**/coverage
+**/htmlcov
+**/__pycache__
+**/*.py[cod]
+**/db.sqlite3
+**/.env
+**/.env.*
+!.env.example
+**/staticfiles
+backend/.pytest_cache
