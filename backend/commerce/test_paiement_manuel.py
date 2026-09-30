@@ -6,7 +6,9 @@ import tempfile
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
+from django.core.signals import request_finished
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.db import close_old_connections
 from django.test import TestCase, override_settings
 from django.utils import timezone
 from rest_framework.test import APIClient
@@ -105,7 +107,14 @@ class PaiementManuelTests(TestCase):
             telechargement = self.api.get(f"/api/abonnement/demandes/{demande.pk}/preuve/")
             self.assertEqual(telechargement.status_code, 200)
             contenu_preuve = b"".join(telechargement.streaming_content)
-            telechargement.close()
+            # HttpResponse.close() émet request_finished. Django y branche
+            # close_old_connections, qui ne doit pas fermer la connexion tenue
+            # par la transaction englobante de TestCase dans ce test.
+            request_finished.disconnect(close_old_connections)
+            try:
+                telechargement.close()
+            finally:
+                request_finished.connect(close_old_connections)
             self.assertTrue(contenu_preuve)
             self.api.force_authenticate(self.autre)
             interdit = self.api.get(f"/api/abonnement/demandes/{demande.pk}/preuve/")
