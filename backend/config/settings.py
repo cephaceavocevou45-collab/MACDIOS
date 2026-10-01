@@ -24,7 +24,10 @@ if not DEBUG and (not CORS_ALLOWED_ORIGINS or "*" in CORS_ALLOWED_ORIGINS):
 
 INSTALLED_APPS = [
     "commerce.admin_config.AdministrationConfig", "django.contrib.auth", "django.contrib.contenttypes",
-    "django.contrib.sessions", "django.contrib.messages", "cloudinary_storage", "django.contrib.staticfiles",
+    # Les preuves utilisent directement le backend Cloudinary ; l'application
+    # Cloudinary n'est pas nécessaire ici et remplace collectstatic par une
+    # commande incompatible avec les réglages STORAGES de Django récent.
+    "django.contrib.sessions", "django.contrib.messages", "django.contrib.staticfiles",
     "rest_framework", "rest_framework_simplejwt", "corsheaders", "drf_spectacular",
     "axes", "commerce.apps.CommerceConfig",
 ]
@@ -87,7 +90,7 @@ LANGUAGE_CODE = "fr-fr"
 TIME_ZONE = "Africa/Porto-Novo"
 USE_I18N = True
 USE_TZ = True
-STATIC_URL = "static/"
+STATIC_URL = "/static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
 STORAGES = {
     "default": {"BACKEND": "commerce.storage.PreuveCloudinaryStorage"},
