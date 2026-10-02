@@ -6,7 +6,7 @@ from .views import (
     plans, VueJournalAudit, export_compte,
     supprimer_compte, sante, mot_de_passe_oublie, reinitialiser_mot_de_passe,
     verifier_document, document_verification_pdf, demandes_paiement_abonnement, preuve_demande_abonnement,
-    recu_abonnement_manuel, offre_essai,
+    recu_abonnement_manuel, offre_essai, jeton_csrf, session_authentifiee, deconnexion,
 )
 
 router = DefaultRouter()
@@ -19,6 +19,9 @@ router.register("paiements", PaiementViewSet, basename="paiement")
 urlpatterns = [
     path("auth/inscription/", inscription, name="inscription"),
     path("auth/connexion/", connexion, name="connexion"),
+    path("auth/csrf/", jeton_csrf, name="csrf"),
+    path("auth/session/", session_authentifiee, name="session-authentifiee"),
+    path("auth/deconnexion/", deconnexion, name="deconnexion"),
     path("auth/refresh/", RafraichirJetonView.as_view(), name="refresh"),
     path("auth/mot-de-passe/oublie/", mot_de_passe_oublie, name="mot-de-passe-oublie"),
     path("auth/mot-de-passe/reinitialiser/", reinitialiser_mot_de_passe, name="mot-de-passe-reinitialiser"),

@@ -10,9 +10,9 @@ from django.dispatch import receiver
 from rest_framework.exceptions import Throttled
 
 from .audit import CHAMPS_AUDITES, _audit_active, enregistrer_evenement
-from .models import Abonnement, CorrectionDette, Dette, JournalAudit, Paiement, PaiementAbonnementHistorique, Produit, Vente
+from .models import Abonnement, Client, CorrectionDette, Dette, JournalAudit, Paiement, PaiementAbonnementHistorique, Produit, Vente
 
-MODELES_AUDITES = (Produit, Vente, Dette, CorrectionDette, Paiement, Abonnement, PaiementAbonnementHistorique)
+MODELES_AUDITES = (Produit, Client, Vente, Dette, CorrectionDette, Paiement, Abonnement, PaiementAbonnementHistorique)
 
 
 def _valeur_json(valeur):

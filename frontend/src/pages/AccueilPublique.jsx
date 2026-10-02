@@ -5,6 +5,7 @@ import { api } from "../api";
 import Icon from "../composants/Icon";
 import { useAuth } from "../contexte/AuthContext";
 import FooterApplication from "../composants/FooterApplication";
+import { extraireListe, formaterFCFA } from "../utils";
 
 const produitsLigneUne = [
   ["🍚", "Épicerie", "Riz"], ["🥜", "Épicerie", "Arachides"], ["🍅", "Produits frais", "Tomates"],
@@ -29,18 +30,6 @@ const questions = [
   ["Ai-je besoin d’un ordinateur ?", "Non. L’interface fonctionne sur téléphone Android et s’adapte aussi aux écrans d’ordinateur."],
   ["Comment le stock est-il mis à jour ?", "À chaque vente enregistrée, la quantité vendue est automatiquement retirée du stock."],
   ["Puis-je suivre les paiements de mes clients ?", "Oui. Vous pouvez enregistrer un paiement et retrouver le solde calculé à partir des dettes et paiements du client."],
-];
-
-// Témoignages fictifs à remplacer par de vrais témoignages avant publication.
-const temoignages = [
-  { initiales: "AM", nom: "Aïcha M.", commerce: "Épicerie de quartier", citation: "Je retrouve rapidement mes ventes et je vois les produits qu’il faut recommander.", note: 5 },
-  { initiales: "KB", nom: "Koffi B.", commerce: "Boutique générale", citation: "Le suivi des crédits clients est plus clair et plus facile à consulter.", note: 5 },
-  { initiales: "FD", nom: "Fatou D.", commerce: "Commerce alimentaire", citation: "Je peux gérer mes produits directement depuis mon téléphone.", note: 5 },
-  { initiales: "MA", nom: "Mariam A.", commerce: "Commerce de produits frais", citation: "Je vérifie mon stock sans devoir tout recompter à la fin de la journée.", note: 5 },
-  { initiales: "YA", nom: "Yao A.", commerce: "Vente de boissons", citation: "Enregistrer une vente est rapide, même pendant les heures de forte affluence.", note: 5 },
-  { initiales: "RN", nom: "Rachid N.", commerce: "Boutique de téléphonie", citation: "J’ai une vue plus simple sur les articles disponibles dans ma boutique.", note: 5 },
-  { initiales: "SO", nom: "Safia O.", commerce: "Prêt-à-porter", citation: "L’application est lisible et je la prends facilement en main.", note: 5 },
-  { initiales: "DA", nom: "Désiré A.", commerce: "Quincaillerie", citation: "Le récapitulatif m’aide à suivre mon activité au quotidien.", note: 5 },
 ];
 
 function Marque({ clair = false }) {
@@ -100,11 +89,15 @@ function BandeauProduits({ produits, direction, nom }) {
 export default function AccueilPublique() {
   const { connecte } = useAuth();
   const [menuOuvert, setMenuOuvert] = useState(false);
-  const [carrouselEnPause, setCarrouselEnPause] = useState(false);
   const [offreEssai, setOffreEssai] = useState(null);
+  const [planMensuel, setPlanMensuel] = useState(null);
+  const [tarifCharge, setTarifCharge] = useState(false);
 
   useEffect(() => {
     api.get("/api/offre-essai/").then(({ data }) => setOffreEssai(data)).catch(() => setOffreEssai(null));
+    api.get("/api/plans/").then(({ data }) => {
+      setPlanMensuel(extraireListe(data).find((plan) => Number(plan.duree_jours) === 30) || null);
+    }).catch(() => setPlanMensuel(null)).finally(() => setTarifCharge(true));
   }, []);
 
   useEffect(() => {
@@ -195,23 +188,7 @@ export default function AccueilPublique() {
 
         <section className="public-section" id="tarifs" data-reveal><div className="public-container">
           <div className="section-heading"><span className="eyebrow">Un tarif simple</span><h2>Une offre claire pour votre boutique</h2><p>Tout ce qu’il faut pour commencer à mieux gérer votre activité.</p></div>
-          <article className="price-card"><div><h3>Offre commerçant</h3><p>Les outils essentiels pour gérer votre commerce au quotidien, réunis dans un seul espace.</p><div className="price-value">{branding.monthlyPrice}<small> / mois</small></div><ul className="price-list"><li><Icon name="check" size={16} /> Suivi des ventes et du stock</li><li><Icon name="check" size={16} /> Gestion des clients et des dettes</li><li><Icon name="check" size={16} /> Tableau de bord récapitulatif</li></ul></div><div className="price-side"><p>Votre activité, mieux organisée dès aujourd’hui.</p><Link to="/inscription" className="btn-primary">Créer mon compte <Icon name="arrow" size={16} /></Link>{offreEssai?.actif && <small className="price-note">Essai gratuit pendant {offreEssai.duree_jours} jours après l’inscription.</small>}</div></article>
-        </div></section>
-
-        <section className="public-section testimonial-section" data-reveal aria-labelledby="temoignages-titre"><div className="public-container">
-          <div className="section-heading"><span className="eyebrow">Paroles de commerçants</span><h2 id="temoignages-titre">Une gestion plus sereine, chaque jour</h2><p>Exemples fictifs à remplacer par de vrais témoignages avant publication.</p></div>
-          <div className={`testimonial-carousel ${carrouselEnPause ? "is-paused" : ""}`} onMouseEnter={() => setCarrouselEnPause(true)} onMouseLeave={() => setCarrouselEnPause(false)} onTouchStart={() => setCarrouselEnPause(true)} onTouchEnd={() => setCarrouselEnPause(false)} onTouchCancel={() => setCarrouselEnPause(false)}>
-            <div className="testimonial-track">
-              {[0, 1].map((copie) => <div className="testimonial-group" key={copie} aria-hidden={copie === 1}>
-                {temoignages.map((t, index) => <article className="testimonial-card" key={`${copie}-${t.nom}`}>
-                  <div className="testimonial-stars" aria-label={`Note de démonstration : ${t.note} étoiles`}>{Array.from({ length: t.note }, (_, etoile) => <span key={etoile} aria-hidden="true">★</span>)}</div>
-                  <blockquote>« {t.citation} »</blockquote>
-                  <div className="testimonial-person"><span className={`testimonial-avatar avatar-tone-${index % 4}`} aria-hidden="true">{t.initiales}</span><span><strong>{t.nom}</strong><small>{t.commerce}</small></span></div>
-                </article>)}
-              </div>)}
-            </div>
-          </div>
-          <p className="example-note">Témoignages de démonstration — à remplacer par de vrais témoignages.</p>
+          <article className="price-card"><div><h3>{planMensuel?.nom || "Offre commerçant"}</h3><p>Les outils essentiels pour gérer votre commerce au quotidien, réunis dans un seul espace.</p><div className="price-value" aria-live="polite">{planMensuel ? <>{formaterFCFA(planMensuel.prix)}<small> / 30 jours</small></> : tarifCharge ? "Tarif temporairement indisponible" : "Chargement du tarif…"}</div><ul className="price-list"><li><Icon name="check" size={16} /> Suivi des ventes et du stock</li><li><Icon name="check" size={16} /> Gestion des clients et des dettes</li><li><Icon name="check" size={16} /> Tableau de bord récapitulatif</li></ul></div><div className="price-side"><p>Votre activité, mieux organisée dès aujourd’hui.</p><Link to="/inscription" className="btn-primary">Créer mon compte <Icon name="arrow" size={16} /></Link>{offreEssai?.actif && <small className="price-note">Essai gratuit pendant {offreEssai.duree_jours} jours après l’inscription.</small>}</div></article>
         </div></section>
 
         <section className="public-section" id="faq" data-reveal><div className="public-container"><div className="section-heading"><span className="eyebrow">FAQ</span><h2>Vos questions, simplement</h2></div><div className="faq-list">{questions.map(([question, reponse]) => <details className="faq-item" key={question}><summary>{question}</summary><p>{reponse}</p></details>)}</div></div></section>

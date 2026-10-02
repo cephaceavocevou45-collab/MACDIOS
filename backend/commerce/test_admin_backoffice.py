@@ -13,6 +13,7 @@ from commerce.models import (
     Abonnement, ConfigurationEssai, DemandePaiementManuel, JournalAudit, Plan, Produit,
     PaiementAbonnementHistorique, ProfilSousAdmin, Vente,
 )
+from commerce.test_helpers import entete_csrf
 
 
 @override_settings(NUMERO_MTN="22961020304", NUMERO_MOOV="", NUMERO_CELTIIS="")
@@ -96,17 +97,14 @@ class BackOfficeTests(TestCase):
         self.assertEqual(api.post(f"/api/admin/utilisateurs/{self.commercant.pk}/suspendre/", {"motif": "Test"}).status_code, 403)
 
     def test_sousadmin_desactive_perd_une_session_jwt_deja_emise(self):
+        csrf = entete_csrf(self.api)
         connexion = self.api.post("/api/admin/auth/connexion/", {
             "email": self.sous_admin.email, "mot_de_passe": "MotDePasse123!",
-        }, format="json")
+        }, format="json", **csrf)
         self.assertEqual(connexion.status_code, 200, connexion.data)
         self.sous_admin.is_active = False
         self.sous_admin.save(update_fields=["is_active"])
-        client_jwt = APIClient()
-        acces = client_jwt.get(
-            "/api/admin/utilisateurs/",
-            HTTP_AUTHORIZATION=f"Bearer {connexion.data['access']}",
-        )
+        acces = self.api.get("/api/admin/utilisateurs/")
         self.assertEqual(acces.status_code, 401)
 
     def test_commercant_ne_peut_acceder_ni_aux_routes_admin_ni_au_login_admin(self):
@@ -117,13 +115,14 @@ class BackOfficeTests(TestCase):
         ):
             with self.subTest(url=url):
                 self.assertEqual(api.get(url).status_code, 403)
+        csrf = entete_csrf(self.api)
         mauvais_espace = self.api.post("/api/admin/auth/connexion/", {
             "email": self.commercant.email, "mot_de_passe": "MotDePasse123!",
-        }, format="json")
+        }, format="json", **csrf)
         self.assertEqual(mauvais_espace.status_code, 400)
         connexion_commercant = self.api.post("/api/auth/connexion/", {
             "email": self.superadmin.email, "mot_de_passe": "MotDePasse123!",
-        }, format="json")
+        }, format="json", **csrf)
         self.assertEqual(connexion_commercant.status_code, 403)
         for methode, url in (
             ("post", f"/api/admin/utilisateurs/{self.commercant.pk}/suspendre/"),
@@ -242,8 +241,9 @@ class BackOfficeTests(TestCase):
     def test_connexion_admin_a_un_rate_limit_strict(self):
         cache.clear()
         donnees = {"email": "inconnu@example.test", "mot_de_passe": "invalide"}
-        premiere = self.api.post("/api/admin/auth/connexion/", donnees, format="json")
-        seconde = self.api.post("/api/admin/auth/connexion/", donnees, format="json")
+        csrf = entete_csrf(self.api)
+        premiere = self.api.post("/api/admin/auth/connexion/", donnees, format="json", **csrf)
+        seconde = self.api.post("/api/admin/auth/connexion/", donnees, format="json", **csrf)
         self.assertEqual(premiere.status_code, 400)
         self.assertEqual(seconde.status_code, 429)
 
@@ -262,9 +262,10 @@ class BackOfficeTests(TestCase):
             action=JournalAudit.Action.SUSPENSION_UTILISATEUR,
             utilisateur=self.superadmin, commercant=self.commercant,
         ).exists())
+        csrf = entete_csrf(self.api)
         connexion = self.api.post("/api/auth/connexion/", {
             "email": self.commercant.email, "mot_de_passe": "MotDePasse123!",
-        }, format="json")
+        }, format="json", **csrf)
         self.assertEqual(connexion.status_code, 403)
         self.assertIn("suspendu", connexion.data["detail"].lower())
 

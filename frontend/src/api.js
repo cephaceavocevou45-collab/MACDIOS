@@ -2,40 +2,98 @@ import axios from "axios";
 
 // L'URL vient de .env ; sans valeur, on utilise le serveur Django local.
 const baseURL = (import.meta.env.VITE_API_URL || "http://127.0.0.1:8000").replace(/\/$/, "");
+const requetesIdempotentesEnAttente = new Map();
+
+// Efface une seule fois les anciens JWT stockés avant le passage aux cookies HttpOnly.
+for (const cle of ["access", "refresh", "admin_access", "admin_refresh"]) {
+  localStorage.removeItem(cle);
+}
 
 export const api = axios.create({
   baseURL,
   timeout: 20000,
+  withCredentials: true,
   headers: { "Content-Type": "application/json" },
 });
 
+let jetonCSRF = "";
+
+export async function initialiserCSRF() {
+  const { data } = await api.get("/api/auth/csrf/");
+  jetonCSRF = data.csrfToken || "";
+}
+
 api.interceptors.request.use((config) => {
-  const access = localStorage.getItem("access");
-  if (access) config.headers.Authorization = `Bearer ${access}`;
+  config.withCredentials = true;
+  const methode = (config.method || "get").toLowerCase();
+  if (jetonCSRF && !["get", "head", "options"].includes(methode)) {
+    config.headers["X-CSRFToken"] = jetonCSRF;
+  }
+
+  // Réutilise une clé en mémoire si l'utilisateur renvoie la même opération
+  // après un délai réseau. Aucune donnée financière n'est persistée côté client.
+  const url = config.url || "";
+  const estOperationFinanciere = methode === "post" && ["/api/ventes/", "/api/dettes/", "/api/paiements/"]
+    .some((route) => url.startsWith(route));
+  if (estOperationFinanciere && !config.headers["Idempotency-Key"]) {
+    let donnees = config.data;
+    if (typeof donnees === "string") {
+      try { donnees = JSON.parse(donnees); } catch { /* Empreinte du texte brut ci-dessous. */ }
+    }
+    const normaliser = (valeur) => {
+      if (Array.isArray(valeur)) return valeur.map(normaliser);
+      if (valeur && typeof valeur === "object") {
+        return Object.fromEntries(Object.keys(valeur).sort().map((cle) => [cle, normaliser(valeur[cle])]));
+      }
+      return valeur;
+    };
+    const signature = `${url}:${JSON.stringify(normaliser(donnees))}`;
+    let cle = requetesIdempotentesEnAttente.get(signature);
+    if (!cle) {
+      cle = globalThis.crypto?.randomUUID?.()
+        || `${Date.now()}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`;
+      requetesIdempotentesEnAttente.set(signature, cle);
+    }
+    config.headers["Idempotency-Key"] = cle;
+    config._nobiSignatureIdempotence = signature;
+  }
   return config;
 });
 
 let renouvellementEnCours = null;
 
 function terminerSession() {
-  localStorage.removeItem("access");
-  localStorage.removeItem("refresh");
+  requetesIdempotentesEnAttente.clear();
   localStorage.removeItem("commercant");
   window.dispatchEvent(new Event("session-expiree"));
 }
 
+function terminerCleIdempotence(config, succes) {
+  const signature = config?._nobiSignatureIdempotence;
+  if (!signature) return;
+  const code = config._nobiCodeErreur;
+  // En cas de coupure ou d'erreur serveur, garder la clé pour sécuriser l'essai suivant.
+  if (succes || (code >= 400 && code < 500 && code !== 429 && code !== 401)) {
+    requetesIdempotentesEnAttente.delete(signature);
+  }
+}
+
+export function viderRequetesIdempotentesEnAttente() {
+  requetesIdempotentesEnAttente.clear();
+}
+
 api.interceptors.response.use(
-  (reponse) => reponse,
+  (reponse) => {
+    terminerCleIdempotence(reponse.config, true);
+    return reponse;
+  },
   async (erreur) => {
     const requete = erreur.config;
-    const estRouteAuth = requete?.url?.includes("/api/auth/");
+    if (requete) requete._nobiCodeErreur = erreur.response?.status;
+    const estRouteAuth = (requete?.url?.includes("/api/auth/") && !requete?.url?.includes("/api/auth/session/"))
+      || requete?.url?.includes("/api/admin/auth/");
     if (erreur.response?.status !== 401 || !requete || requete._retentee || estRouteAuth) {
-      return Promise.reject(erreur);
-    }
-
-    const refresh = localStorage.getItem("refresh");
-    if (!refresh) {
-      terminerSession();
+      terminerCleIdempotence(requete, false);
       return Promise.reject(erreur);
     }
 
@@ -44,19 +102,18 @@ api.interceptors.response.use(
       // Les requêtes simultanées attendent le même rafraîchissement JWT.
       if (!renouvellementEnCours) {
         renouvellementEnCours = axios
-          .post(`${baseURL}/api/auth/refresh/`, { refresh }, { timeout: 20000 })
-          .then(({ data }) => {
-            localStorage.setItem("access", data.access);
-            return data.access;
+          .post(`${baseURL}/api/auth/refresh/`, {}, {
+            timeout: 20000, withCredentials: true,
+            headers: jetonCSRF ? { "X-CSRFToken": jetonCSRF } : {},
           })
+          .then(() => true)
           .finally(() => { renouvellementEnCours = null; });
       }
-      const nouvelAccess = await renouvellementEnCours;
-      requete.headers = requete.headers || {};
-      requete.headers.Authorization = `Bearer ${nouvelAccess}`;
+      await renouvellementEnCours;
       return api(requete);
     } catch (erreurRefresh) {
       terminerSession();
+      terminerCleIdempotence(requete, false);
       return Promise.reject(erreurRefresh);
     }
   },

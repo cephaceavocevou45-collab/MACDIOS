@@ -1,6 +1,6 @@
 services:
   db:
-    image: postgres:16-alpine
+    image: postgres:15-alpine
     restart: unless-stopped
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-nobi}
@@ -14,6 +14,15 @@ services:
       timeout: 5s
       retries: 10
 
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
   backend:
     build:
       context: .
@@ -23,8 +32,9 @@ services:
       - path: .env
         required: false
     environment:
-      SECRET_KEY: ${SECRET_KEY:-cle-locale-a-remplacer-avant-deploiement}
-      DEBUG: ${DEBUG:-True}
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+      SECRET_KEY: ${SECRET_KEY:-}
+      DEBUG: ${DEBUG:-}
       FRONTEND_URL: ${FRONTEND_URL:-http://localhost:8080}
       PUBLIC_FRONTEND_URL: ${PUBLIC_FRONTEND_URL:-http://localhost:8080}
       NUMERO_MTN: ${NUMERO_MTN:-}
@@ -45,11 +55,23 @@ services:
       SECURE_SSL_REDIRECT: ${SECURE_SSL_REDIRECT:-False}
       SECURE_HSTS_SECONDS: ${SECURE_HSTS_SECONDS:-0}
       CSRF_TRUSTED_ORIGINS: ${CSRF_TRUSTED_ORIGINS:-}
+      AUTH_COOKIE_SECURE: ${AUTH_COOKIE_SECURE:-False}
+      AUTH_COOKIE_SAMESITE: ${AUTH_COOKIE_SAMESITE:-Lax}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      BACKUP_ENCRYPTION_KEY: ${BACKUP_ENCRYPTION_KEY:-}
+      BACKUP_S3_BUCKET: ${BACKUP_S3_BUCKET:-}
+      BACKUP_S3_PREFIX: ${BACKUP_S3_PREFIX:-nobi/database}
+      AWS_REGION: ${AWS_REGION:-}
+      AWS_ENDPOINT_URL: ${AWS_ENDPOINT_URL:-}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
       DATABASE_URL: ${DATABASE_URL:-postgresql://nobi:local-non-secret@db:5432/nobi}
       ALLOWED_HOSTS: ${ALLOWED_HOSTS:-localhost,127.0.0.1,backend}
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:5173,http://localhost:8080}
     depends_on:
       db:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     ports:
       - "8000:8000"

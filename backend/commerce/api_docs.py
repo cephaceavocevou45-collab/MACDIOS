@@ -16,9 +16,45 @@ class InscriptionReponseSerializer(serializers.Serializer):
 
 
 class ConnexionReponseSerializer(serializers.Serializer):
-    access = serializers.CharField()
-    refresh = serializers.CharField()
+    detail = serializers.CharField(required=False)
     commercant = InscriptionReponseSerializer()
+
+
+class ConnexionAdminReponseSerializer(serializers.Serializer):
+    """Réponse publique du login admin, sans jeton dans le JSON."""
+
+    administrateur = serializers.JSONField()
+
+
+class OffreEssaiReponseSerializer(serializers.Serializer):
+    actif = serializers.BooleanField()
+    duree_jours = serializers.IntegerField()
+
+
+class SanteReponseSerializer(serializers.Serializer):
+    statut = serializers.CharField()
+    base_de_donnees = serializers.CharField(required=False)
+    detail = serializers.CharField(required=False)
+
+
+class CsrfTokenReponseSerializer(serializers.Serializer):
+    csrfToken = serializers.CharField()
+
+
+class SessionReponseSerializer(serializers.Serializer):
+    administrateur = serializers.JSONField(allow_null=True)
+    commercant = serializers.JSONField(allow_null=True)
+
+
+class ConfirmationSuppressionSerializer(serializers.Serializer):
+    mot_de_passe = serializers.CharField(write_only=True)
+
+
+class ReponseListePaginee(serializers.Serializer):
+    count = serializers.IntegerField()
+    next = serializers.URLField(allow_null=True)
+    previous = serializers.URLField(allow_null=True)
+    results = serializers.ListField(child=serializers.JSONField())
 
 
 EXEMPLE_ERREUR = OpenApiResponse(

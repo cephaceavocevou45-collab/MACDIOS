@@ -9,6 +9,7 @@ import Input from "../composants/Input";
 import Modal from "../composants/Modal";
 import { SkeletonCard } from "../composants/Skeleton";
 import { useToast } from "../composants/ToastProvider";
+import Pagination from "../composants/Pagination";
 import { afficherDate, formaterFCFA } from "../utils";
 
 export default function DetailClient() {
@@ -24,21 +25,24 @@ export default function DetailClient() {
   const [envoi, setEnvoi] = useState(false);
   const [pdfEnCours, setPdfEnCours] = useState(null);
   const [erreur, setErreur] = useState("");
+  const [pageDettes, setPageDettes] = useState(1);
+  const [nombreDettes, setNombreDettes] = useState(0);
   const notifier = useToast();
 
   const charger = useCallback(async () => {
     try {
       const [reponseClient, reponseDettes] = await Promise.all([
         api.get(`/api/clients/${id}/`),
-        api.get("/api/dettes/", { params: { client: id } }),
+        api.get("/api/dettes/", { params: { client: id, page: pageDettes } }),
       ]);
       setClient(reponseClient.data);
       setDettes(Array.isArray(reponseDettes.data) ? reponseDettes.data : reponseDettes.data.results || []);
+      setNombreDettes(reponseDettes.data.count ?? reponseDettes.data.length ?? 0);
       setErreur("");
     } catch (error) {
       const texte = messageErreur(error); setErreur(texte); notifier(texte, "error");
     } finally { setChargement(false); }
-  }, [id, notifier]);
+  }, [id, pageDettes, notifier]);
 
   useEffect(() => { charger(); }, [charger]);
 
@@ -83,17 +87,19 @@ export default function DetailClient() {
   const solde = Number(client.solde || 0);
 
   return <>
-    <div className="page-heading"><div><Link to="/clients" className="back-link">← Tous les clients</Link><div className="client-detail-title"><span className="client-avatar client-avatar-large">{client.nom?.trim()?.charAt(0)?.toUpperCase() || "C"}</span><div><h1>{client.nom}</h1><p>{client.telephone || "Aucun téléphone renseigné"}</p></div></div></div><Badge tone={solde > 0 ? "amber" : "green"}>{solde > 0 ? "Solde à régler" : "Compte à jour"}</Badge></div>
+    <div className="page-heading"><div><Link to="/clients" className="back-link">← Tous les clients</Link><div className="client-detail-title"><span className="client-avatar client-avatar-large">{client.nom?.trim()?.charAt(0)?.toUpperCase() || "C"}</span><div><h1>{client.nom}</h1><p>{client.telephone || "Aucun téléphone renseigné"}</p></div></div></div><div className="flex flex-wrap gap-2"><Badge tone={solde > 0 ? "amber" : "green"}>{solde > 0 ? "Solde à régler" : "Compte à jour"}</Badge>{!client.actif && <Badge tone="neutral">Client archivé</Badge>}</div></div>
+    {!client.actif && <div className="alert-box mb-4" role="status">Ce client est archivé. Son historique reste consultable, mais aucune nouvelle opération ne peut être enregistrée.</div>}
     {erreur && <div className="alert-box mb-4" role="alert">{erreur}</div>}
     <div className="client-detail-grid"><Card className="balance-card"><span className="balance-icon"><Icon name="wallet" size={22}/></span><p>Solde en cours</p><strong>{formaterFCFA(client.solde)}</strong><small>Dettes enregistrées moins les paiements reçus</small></Card><Card className="balance-explainer"><span className="feature-icon"><Icon name="info" size={21}/></span><h2>Un suivi clair, au même endroit</h2><p>Ajoutez une dette lorsque votre client achète à crédit. Enregistrez ensuite ses paiements pour actualiser son solde.</p></Card></div>
-    <div className="client-actions"><Button onClick={() => setAction("dette")}><Icon name="plus" size={17}/>Ajouter une dette</Button><Button variant="secondary" onClick={() => setAction("paiement")} disabled={solde <= 0}><Icon name="wallet" size={17}/>Enregistrer un paiement</Button></div>
+    {client.actif && <div className="client-actions"><Button onClick={() => setAction("dette")}><Icon name="plus" size={17}/>Ajouter une dette</Button><Button variant="secondary" onClick={() => setAction("paiement")} disabled={solde <= 0}><Icon name="wallet" size={17}/>Enregistrer un paiement</Button></div>}
 
     <section className="debt-list-section"><div className="section-card-heading"><div><h2>Dettes enregistrées</h2><p>Chaque reçu PDF reprend le solde global restant du client.</p></div></div>
       {dettes.length === 0 ? <Card><p className="empty-state">Aucune dette enregistrée pour ce client.</p></Card> : <div className="debt-list">{dettes.map((dette) => <Card className="debt-item" key={dette.id}>
         <div className="debt-item-heading"><div><span className="field-hint">Dette du {afficherDate(dette.date)}</span><strong>{formaterFCFA(dette.montant)}</strong>{dette.note && <p>{dette.note}</p>}</div><Badge tone="amber">Dette</Badge></div>
         {dette.corrections?.length > 0 && <div className="debt-corrections"><strong>Historique des corrections</strong>{dette.corrections.map((correction) => <p key={correction.id}>{afficherDate(correction.date)} : {formaterFCFA(correction.montant_precedent)} → {formaterFCFA(correction.nouveau_montant)} — {correction.raison}</p>)}</div>}
-        <div className="debt-item-actions"><Button variant="secondary" onClick={() => telechargerRecu(dette)} disabled={pdfEnCours === dette.id}>{pdfEnCours === dette.id ? "Préparation…" : "Télécharger le reçu (PDF)"}</Button><Button variant="ghost" onClick={() => { setDetteChoisie(dette); setMontant(dette.montant); setAction("correction"); }}>Corriger le montant</Button></div>
+        <div className="debt-item-actions"><Button variant="secondary" onClick={() => telechargerRecu(dette)} disabled={pdfEnCours === dette.id}>{pdfEnCours === dette.id ? "Préparation…" : "Télécharger le reçu (PDF)"}</Button>{client.actif && <Button variant="ghost" onClick={() => { setDetteChoisie(dette); setMontant(dette.montant); setAction("correction"); }}>Corriger le montant</Button>}</div>
       </Card>)}</div>}
+      <Pagination page={pageDettes} count={nombreDettes} onChange={setPageDettes}/>
     </section>
 
     <Modal open={Boolean(action)} title={action === "dette" ? "Ajouter une dette" : action === "paiement" ? "Enregistrer un paiement" : "Corriger le montant"} onClose={fermer}>

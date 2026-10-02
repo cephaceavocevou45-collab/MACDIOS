@@ -220,14 +220,27 @@ class NouvellesFonctionnalitesTests(TestCase):
         self.assertEqual(reponse.status_code, status.HTTP_200_OK)
         self.assertEqual(reponse.data, {"valide": False})
 
-    def test_scan_du_code_qr_affiche_le_recu_pdf_complet(self):
+    def test_pdf_du_qr_est_prive_et_reste_accessible_a_son_proprietaire(self):
         client = Client.objects.create(commercant=self.user, nom="Awa")
         dette = Dette.objects.create(commercant=self.user, client=client, montant=12500)
         generation = self.client_api.get(f"/api/dettes/{dette.pk}/recu/")
         self.assertEqual(generation.status_code, status.HTTP_200_OK)
         dette.refresh_from_db()
 
-        reponse = APIClient().get(f"/api/verifier/{dette.code_verification}/recu/")
+        reponse_publique = APIClient().get(f"/api/verifier/{dette.code_verification}/recu/")
+        self.assertEqual(reponse_publique.status_code, status.HTTP_401_UNAUTHORIZED)
+
+        autre = Commercant.objects.create_user(
+            email="autre-recu-prive@example.test", nom_boutique="Autre", password="AncienMotDePasse123!",
+        )
+        api_autre = APIClient()
+        api_autre.force_authenticate(autre)
+        self.assertEqual(
+            api_autre.get(f"/api/verifier/{dette.code_verification}/recu/").status_code,
+            status.HTTP_404_NOT_FOUND,
+        )
+
+        reponse = self.client_api.get(f"/api/verifier/{dette.code_verification}/recu/")
 
         self.assertEqual(reponse.status_code, status.HTTP_200_OK)
         self.assertEqual(reponse["Content-Type"], "application/pdf")
@@ -238,7 +251,7 @@ class NouvellesFonctionnalitesTests(TestCase):
         self.assertIn("12 500 FCFA", texte)
 
     def test_scan_du_code_qr_invalide_ne_delivre_aucun_pdf(self):
-        reponse = APIClient().get("/api/verifier/00000000-0000-0000-0000-000000000000/recu/")
+        reponse = self.client_api.get("/api/verifier/00000000-0000-0000-0000-000000000000/recu/")
         self.assertEqual(reponse.status_code, status.HTTP_404_NOT_FOUND)
 
     def test_code_d_un_recu_supprime_devient_invalide(self):

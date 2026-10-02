@@ -1,8 +1,11 @@
 """Tests de sécurité tenant, throttling, audit et données personnelles."""
 
 import json
+import gzip
+import os
 import re
 import tempfile
+import unittest
 from datetime import timedelta
 from pathlib import Path
 from unittest.mock import patch
@@ -11,11 +14,12 @@ from axes.models import AccessAttempt, AccessFailureLog, AccessLog
 from django.contrib import admin
 from django.contrib.auth import get_user_model
 from django.core.management import call_command
+from django.core.cache import cache
 from django.db import DatabaseError
 from django.test import TestCase, override_settings
 from django.utils import timezone
 from rest_framework.test import APIClient
-from rest_framework_simplejwt.tokens import RefreshToken
+from cryptography.fernet import Fernet
 
 from .admin import JournalAuditAdmin
 from config.observabilite import filtrer_evenement_sentry
@@ -23,6 +27,7 @@ from .models import (
     Abonnement, Client, CorrectionDette, Dette, JournalAudit, Paiement, Plan, Produit,
     PaiementAbonnementHistorique, Vente,
 )
+from .test_helpers import entete_csrf
 
 Commercant = get_user_model()
 
@@ -51,9 +56,28 @@ class SecuriteEtDonneesTests(TestCase):
 
     def test_throttle_connexion_refuse_la_requete_suivante(self):
         reglages = {"DEFAULT_THROTTLE_RATES": {"connexion": "1/minute"}}
+        csrf = entete_csrf(self.api)
         with override_settings(REST_FRAMEWORK=reglages):
-            premiere = self.api.post("/api/auth/connexion/", {"email": "inconnu@example.test", "mot_de_passe": "x"}, format="json")
-            seconde = self.api.post("/api/auth/connexion/", {"email": "inconnu@example.test", "mot_de_passe": "x"}, format="json")
+            premiere = self.api.post("/api/auth/connexion/", {"email": "inconnu@example.test", "mot_de_passe": "x"}, format="json", **csrf)
+            seconde = self.api.post("/api/auth/connexion/", {"email": "inconnu@example.test", "mot_de_passe": "x"}, format="json", **csrf)
+        self.assertEqual(premiere.status_code, 400)
+        self.assertEqual(seconde.status_code, 429)
+
+    @unittest.skipUnless(os.environ.get("REDIS_URL", "").startswith(("redis://", "rediss://")), "Redis de test non configuré.")
+    def test_rate_limit_est_partage_entre_deux_clients_via_redis(self):
+        reglages = {"DEFAULT_THROTTLE_RATES": {"connexion": "1/minute"}}
+        cache.clear()
+        premier_client = APIClient()
+        second_client = APIClient()
+        csrf_premier = entete_csrf(premier_client)
+        csrf_second = entete_csrf(second_client)
+        with override_settings(REST_FRAMEWORK=reglages):
+            premiere = premier_client.post("/api/auth/connexion/", {
+                "email": "absent@example.test", "mot_de_passe": "invalide",
+            }, format="json", **csrf_premier)
+            seconde = second_client.post("/api/auth/connexion/", {
+                "email": "absent@example.test", "mot_de_passe": "invalide",
+            }, format="json", **csrf_second)
         self.assertEqual(premiere.status_code, 400)
         self.assertEqual(seconde.status_code, 429)
 
@@ -71,22 +95,28 @@ class SecuriteEtDonneesTests(TestCase):
         self.assertEqual(premiere.status_code, 201, premiere.data)
         self.assertEqual(seconde.status_code, 429)
 
-        jeton = str(RefreshToken.for_user(self.user))
+        client_session = APIClient()
+        csrf_session = entete_csrf(client_session)
+        connexion = client_session.post("/api/auth/connexion/", {
+            "email": self.user.email, "mot_de_passe": "MotDePasse123!",
+        }, format="json", **csrf_session)
+        self.assertEqual(connexion.status_code, 200, connexion.data)
         with override_settings(REST_FRAMEWORK=reglages):
-            premier_refresh = self.api.post("/api/auth/refresh/", {"refresh": jeton}, format="json")
-            second_refresh = self.api.post("/api/auth/refresh/", {"refresh": jeton}, format="json")
+            premier_refresh = client_session.post("/api/auth/refresh/", {}, format="json", **csrf_session)
+            second_refresh = client_session.post("/api/auth/refresh/", {}, format="json", **csrf_session)
         self.assertEqual(premier_refresh.status_code, 200, premier_refresh.data)
         self.assertEqual(second_refresh.status_code, 429)
 
     @override_settings(AXES_FAILURE_LIMIT=3, AXES_COOLOFF_TIME=timedelta(minutes=15))
     def test_axes_verrouille_apres_trois_mauvais_mots_de_passe(self):
         client = APIClient()
+        csrf = entete_csrf(client)
         resultats = [client.post("/api/auth/connexion/", {
             "email": self.user.email, "mot_de_passe": "incorrect",
-        }, format="json") for _ in range(3)]
+        }, format="json", **csrf) for _ in range(3)]
         verrouillage = client.post("/api/auth/connexion/", {
             "email": self.user.email, "mot_de_passe": "MotDePasse123!",
-        }, format="json")
+        }, format="json", **csrf)
         self.assertTrue(all(resultat.status_code in (400, 403, 429) for resultat in resultats))
         self.assertEqual(verrouillage.status_code, 429, verrouillage.data)
         self.assertIn("15 minutes", str(verrouillage.data))
@@ -234,17 +264,21 @@ class SecuriteEtDonneesTests(TestCase):
         self.assertEqual(indisponible.status_code, 503)
         self.assertNotIn("secret de base", str(indisponible.data))
 
-    def test_sauvegarde_json_peut_etre_restauree(self):
+    def test_sauvegarde_chiffree_peut_etre_restauree(self):
         produit = Produit.objects.create(commercant=self.user, nom="Produit sauvegardé", prix=700, quantite_stock=2)
+        cle = Fernet.generate_key().decode("ascii")
         with tempfile.TemporaryDirectory() as dossier:
-            fichier = Path(dossier) / "sauvegarde.json"
-            call_command("sauvegarde_db", sortie=fichier, verbosity=0)
+            fichier = Path(dossier) / "sauvegarde.json.gz.fernet"
+            with override_settings(BACKUP_ENCRYPTION_KEY=cle, BACKUP_S3_BUCKET="", EST_PRODUCTION=False):
+                call_command("sauvegarde_db", sortie=fichier, verbosity=0)
             self.assertTrue(fichier.exists())
-            contenu = json.loads(fichier.read_text(encoding="utf-8"))
+            dechiffre = Fernet(cle.encode("ascii")).decrypt(fichier.read_bytes())
+            contenu = json.loads(gzip.decompress(dechiffre).decode("utf-8"))
             self.assertTrue(any(ligne["pk"] == produit.pk for ligne in contenu if ligne["model"] == "commerce.produit"))
             identifiant_produit = produit.pk
             produit.delete()
-            call_command("loaddata", fichier, verbosity=1)
+            with override_settings(BACKUP_ENCRYPTION_KEY=cle, EST_PRODUCTION=False):
+                call_command("restaure_db", fichier, verbosity=0)
             self.assertTrue(Produit.objects.filter(pk=identifiant_produit).exists())
 
     def test_inscription_exige_consentement_et_enregistre_sa_date(self):

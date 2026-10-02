@@ -5,21 +5,56 @@ from pathlib import Path
 
 from decouple import Csv, config
 import dj_database_url
+from corsheaders.defaults import default_headers
+from django.core.exceptions import ImproperlyConfigured
 
 from .observabilite import filtrer_evenement_sentry
 
 BASE_DIR = Path(__file__).resolve().parent.parent
-SECRET_KEY = config("SECRET_KEY", default="cle-de-developpement-a-remplacer")
-DEBUG = config("DEBUG", default=True, cast=bool)
+ENVIRONMENT = config("ENVIRONMENT", default="").strip().lower()
+if not ENVIRONMENT:
+    raise ImproperlyConfigured("ENVIRONMENT doit être explicitement défini.")
+if ENVIRONMENT not in {"development", "test", "production"}:
+    raise ImproperlyConfigured("ENVIRONMENT doit être development, test ou production.")
+
+# Render et Railway sont reconnus même si ENVIRONMENT a été oublié dans leur configuration.
+EST_PRODUCTION = (
+    ENVIRONMENT == "production"
+    or config("RENDER", default=False, cast=bool)
+    or bool(config("RAILWAY_ENVIRONMENT", default="").strip())
+)
+
+# DEBUG est désactivé par défaut. En production, les deux réglages critiques
+# doivent être explicitement fournis et ne peuvent pas être remplacés par un repli.
+debug_env = config("DEBUG", default=None)
+if EST_PRODUCTION:
+    if debug_env is None or not str(debug_env).strip():
+        raise ImproperlyConfigured("DEBUG doit être explicitement défini à False en production.")
+    DEBUG = config("DEBUG", cast=bool)
+    if DEBUG:
+        raise ImproperlyConfigured("DEBUG=True est interdit en production.")
+    SECRET_KEY = config("SECRET_KEY", default="").strip()
+    if not SECRET_KEY:
+        raise ImproperlyConfigured("SECRET_KEY doit être explicitement définie en production.")
+else:
+    DEBUG = config("DEBUG", default=False, cast=bool)
+    SECRET_KEY = config(
+        "SECRET_KEY",
+        default="django-insecure-local-only-change-before-deployment",
+    ).strip()
+    if not SECRET_KEY:
+        raise ImproperlyConfigured("SECRET_KEY ne peut pas être vide.")
+
 ALLOWED_HOSTS = config(
-    "ALLOWED_HOSTS", default="localhost,127.0.0.1" if DEBUG else "", cast=Csv()
+    "ALLOWED_HOSTS", default="localhost,127.0.0.1" if not EST_PRODUCTION else "", cast=Csv()
 )
 CORS_ALLOWED_ORIGINS = config(
-    "CORS_ALLOWED_ORIGINS", default="http://localhost:5173" if DEBUG else "", cast=Csv()
+    "CORS_ALLOWED_ORIGINS", default="http://localhost:5173" if not EST_PRODUCTION else "", cast=Csv()
 )
-if not DEBUG and (not ALLOWED_HOSTS or "*" in ALLOWED_HOSTS):
+CORS_ALLOW_HEADERS = (*default_headers, "idempotency-key")
+if EST_PRODUCTION and (not ALLOWED_HOSTS or "*" in ALLOWED_HOSTS):
     raise ValueError("ALLOWED_HOSTS doit contenir les domaines exacts en production.")
-if not DEBUG and (not CORS_ALLOWED_ORIGINS or "*" in CORS_ALLOWED_ORIGINS):
+if EST_PRODUCTION and (not CORS_ALLOWED_ORIGINS or "*" in CORS_ALLOWED_ORIGINS):
     raise ValueError("CORS_ALLOWED_ORIGINS doit contenir les origines exactes en production.")
 
 INSTALLED_APPS = [
@@ -28,7 +63,7 @@ INSTALLED_APPS = [
     # Cloudinary n'est pas nécessaire ici et remplace collectstatic par une
     # commande incompatible avec les réglages STORAGES de Django récent.
     "django.contrib.sessions", "django.contrib.messages", "django.contrib.staticfiles",
-    "rest_framework", "rest_framework_simplejwt", "corsheaders", "drf_spectacular",
+    "rest_framework", "rest_framework_simplejwt", "rest_framework_simplejwt.token_blacklist", "corsheaders", "drf_spectacular",
     "axes", "commerce.apps.CommerceConfig",
 ]
 MIDDLEWARE = [
@@ -60,6 +95,46 @@ DATABASES = {
     )
 }
 
+# Le cache local sert au développement. En production, REDIS_URL permet de
+# partager les compteurs DRF/Axes entre plusieurs processus ou instances.
+REDIS_URL = config("REDIS_URL", default="").strip()
+if EST_PRODUCTION and not REDIS_URL:
+    raise ImproperlyConfigured("REDIS_URL est obligatoire en production pour partager les compteurs de sécurité.")
+if REDIS_URL:
+    if not REDIS_URL.startswith(("redis://", "rediss://", "unix://")):
+        raise ImproperlyConfigured("REDIS_URL doit utiliser redis://, rediss:// ou unix://.")
+    CACHES = {
+        "default": {
+            "BACKEND": "django.core.cache.backends.redis.RedisCache",
+            "LOCATION": REDIS_URL,
+            "TIMEOUT": 300,
+            "KEY_PREFIX": "nobi",
+            "OPTIONS": {
+                "socket_connect_timeout": 3,
+                "socket_timeout": 3,
+                "retry_on_timeout": True,
+            },
+        }
+    }
+else:
+    CACHES = {
+        "default": {
+            "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+            "LOCATION": "nobi-local-throttles",
+            "TIMEOUT": 300,
+        }
+    }
+
+BACKUP_ENCRYPTION_KEY = config("BACKUP_ENCRYPTION_KEY", default="").strip()
+BACKUP_S3_BUCKET = config("BACKUP_S3_BUCKET", default="").strip()
+BACKUP_S3_PREFIX = config("BACKUP_S3_PREFIX", default="nobi/database").strip("/")
+AWS_REGION = config("AWS_REGION", default="")
+AWS_ENDPOINT_URL = config("AWS_ENDPOINT_URL", default="")
+if EST_PRODUCTION and (not BACKUP_ENCRYPTION_KEY or not BACKUP_S3_BUCKET):
+    raise ImproperlyConfigured(
+        "BACKUP_ENCRYPTION_KEY et BACKUP_S3_BUCKET sont obligatoires en production."
+    )
+
 AUTH_USER_MODEL = "commerce.Commercant"
 AUTHENTICATION_BACKENDS = [
     "axes.backends.AxesStandaloneBackend",
@@ -71,6 +146,9 @@ AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.CommonPasswordValidator"},
     {"NAME": "django.contrib.auth.password_validation.NumericPasswordValidator"},
 ]
+if ENVIRONMENT == "test":
+    # Hachage rapide uniquement dans les bases jetables des tests automatisés.
+    PASSWORD_HASHERS = ["django.contrib.auth.hashers.MD5PasswordHasher"]
 AXES_FAILURE_LIMIT = 5
 AXES_COOLOFF_TIME = timedelta(minutes=15)
 AXES_USE_ATTEMPT_EXPIRATION = True
@@ -81,7 +159,7 @@ AXES_LOCKOUT_CALLABLE = "commerce.security.reponse_verrouillage"
 AXES_USERNAME_CALLABLE = "commerce.security.identifiant_connexion"
 AXES_PASSWORD_FORM_FIELD = "mot_de_passe"
 AXES_SENSITIVE_PARAMETERS = ["email", "telephone", "mot_de_passe", "token", "authorization", "secret", "api-key"]
-if not DEBUG:
+if EST_PRODUCTION:
     # Render ajoute l'adresse réelle en fin de X-Forwarded-For derrière son proxy TLS.
     AXES_IPWARE_META_PRECEDENCE_ORDER = ("HTTP_X_FORWARDED_FOR", "REMOTE_ADDR")
     AXES_IPWARE_PROXY_COUNT = 1
@@ -111,7 +189,17 @@ CLOUDINARY_STORAGE = {
 }
 PASSWORD_RESET_TIMEOUT = 15 * 60
 CSRF_TRUSTED_ORIGINS = config("CSRF_TRUSTED_ORIGINS", default="", cast=Csv())
-CORS_ALLOW_CREDENTIALS = False
+CORS_ALLOW_CREDENTIALS = True
+AUTH_COOKIE_SECURE = config("AUTH_COOKIE_SECURE", default=EST_PRODUCTION, cast=bool)
+AUTH_COOKIE_SAMESITE = config("AUTH_COOKIE_SAMESITE", default="None" if EST_PRODUCTION else "Lax")
+if AUTH_COOKIE_SAMESITE not in {"Strict", "Lax", "None"}:
+    raise ImproperlyConfigured("AUTH_COOKIE_SAMESITE doit valoir Strict, Lax ou None.")
+if EST_PRODUCTION and (not AUTH_COOKIE_SECURE or AUTH_COOKIE_SAMESITE != "None"):
+    raise ImproperlyConfigured("En production, les cookies JWT exigent Secure et SameSite=None pour l'interface séparée.")
+if not CSRF_TRUSTED_ORIGINS:
+    CSRF_TRUSTED_ORIGINS = list(CORS_ALLOWED_ORIGINS)
+CSRF_COOKIE_SECURE = AUTH_COOKIE_SECURE
+CSRF_COOKIE_SAMESITE = AUTH_COOKIE_SAMESITE
 
 
 # Vonage SMS : la simulation est activée par défaut pour éviter tout coût en local.
@@ -127,23 +215,31 @@ BREVO_SENDER_EMAIL = config("BREVO_SENDER_EMAIL", default="")
 BREVO_SENDER_NAME = config("BREVO_SENDER_NAME", default="Nobi")
 
 REST_FRAMEWORK = {
-    "DEFAULT_AUTHENTICATION_CLASSES": ["rest_framework_simplejwt.authentication.JWTAuthentication"],
+    "DEFAULT_AUTHENTICATION_CLASSES": ["commerce.authentication.CookieSessionJWTAuthentication"],
     "DEFAULT_PERMISSION_CLASSES": ["rest_framework.permissions.IsAuthenticated"],
     "DEFAULT_RENDERER_CLASSES": ["rest_framework.renderers.JSONRenderer"],
+    "DEFAULT_PAGINATION_CLASS": "commerce.pagination.PaginationStandard",
+    "PAGE_SIZE": 20,
     "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
     "DEFAULT_THROTTLE_CLASSES": ["rest_framework.throttling.ScopedRateThrottle"],
     "DEFAULT_THROTTLE_RATES": {
         "connexion": "5/minute", "admin_connexion": "3/minute", "inscription": "3/hour", "refresh": "30/minute",
         "mot_de_passe_oublie": "3/hour", "reinitialisation_mot_de_passe": "5/hour",
-        "verification_document": "10/minute",
+        "verification_document": "10/minute", "vente": "60/minute", "dette": "30/minute",
+        "paiement": "30/minute",
     },
-    "NUM_PROXIES": 1 if not DEBUG else None,
+    "NUM_PROXIES": 1 if EST_PRODUCTION else None,
 }
 SPECTACULAR_SETTINGS = {
     "TITLE": "Nobi — API de gestion commerciale",
     "DESCRIPTION": "API REST pour gérer les ventes, le stock, les clients et les abonnements.",
     "VERSION": "1.0.0",
     "SERVE_INCLUDE_SCHEMA": False,
+    "ENUM_NAME_OVERRIDES": {
+        "AbonnementStatutEnum": [("essai", "Essai"), ("actif", "Actif"), ("expire", "Expiré")],
+        "HistoriquePaiementStatutEnum": [("en_attente", "En attente"), ("reussi", "Réussi"), ("echoue", "Échoué")],
+        "DemandePaiementStatutEnum": [("en_attente", "En attente"), ("validee", "Validée"), ("rejetee", "Rejetée")],
+    },
     "TAGS": [
         {"name": "Auth", "description": "Inscription, connexion et renouvellement JWT."},
         {"name": "Tableau de bord", "description": "Indicateurs du commerçant connecté."},
@@ -153,23 +249,21 @@ SPECTACULAR_SETTINGS = {
         {"name": "Abonnement", "description": "Offres, paiements Mobile Money et statut d'abonnement."},
     ],
     "COMPONENT_SPLIT_REQUEST": True,
-    "SECURITY": [{"BearerAuth": []}],
-    "APPEND_COMPONENTS": {"securitySchemes": {
-        "BearerAuth": {"type": "http", "scheme": "bearer", "bearerFormat": "JWT"},
-    }},
 }
 SIMPLE_JWT = {
-    "ACCESS_TOKEN_LIFETIME": timedelta(minutes=30),
+    "ACCESS_TOKEN_LIFETIME": timedelta(minutes=5),
     "REFRESH_TOKEN_LIFETIME": timedelta(days=7),
     "AUTH_HEADER_TYPES": ("Bearer",),
+    "ROTATE_REFRESH_TOKENS": True,
+    "BLACKLIST_AFTER_ROTATION": True,
 }
 
 # En-têtes de transport adaptés à Render / reverse proxy en production.
-SECURE_SSL_REDIRECT = config("SECURE_SSL_REDIRECT", default=not DEBUG, cast=bool)
-SESSION_COOKIE_SECURE = not DEBUG
-CSRF_COOKIE_SECURE = not DEBUG
-SECURE_HSTS_SECONDS = config("SECURE_HSTS_SECONDS", default=0 if DEBUG else 31536000, cast=int)
-SECURE_HSTS_INCLUDE_SUBDOMAINS = not DEBUG
+SECURE_SSL_REDIRECT = config("SECURE_SSL_REDIRECT", default=EST_PRODUCTION, cast=bool)
+SESSION_COOKIE_SECURE = EST_PRODUCTION
+CSRF_COOKIE_SECURE = EST_PRODUCTION
+SECURE_HSTS_SECONDS = config("SECURE_HSTS_SECONDS", default=0 if not EST_PRODUCTION else 31536000, cast=int)
+SECURE_HSTS_INCLUDE_SUBDOMAINS = EST_PRODUCTION
 SECURE_HSTS_PRELOAD = False
 SECURE_CONTENT_TYPE_NOSNIFF = True
 X_FRAME_OPTIONS = "DENY"
@@ -187,7 +281,7 @@ if SENTRY_DSN:
         before_send=filtrer_evenement_sentry,
     )
 
-if not DEBUG:
+if EST_PRODUCTION:
     LOGGING = {
         "version": 1,
         "disable_existing_loggers": False,

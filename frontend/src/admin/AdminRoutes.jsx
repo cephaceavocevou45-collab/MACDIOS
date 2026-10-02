@@ -15,7 +15,8 @@ function ConnexionAdminAvecPied() {
 }
 
 function AdminGarde({ permission }) {
-  const { connecte, administrateur } = useAdminAuth();
+  const { connecte, administrateur, initialisation } = useAdminAuth();
+  if (initialisation) return <div className="admin-loading" role="status">Vérification de la session…</div>;
   if (!connecte) return <Navigate to="/admin/connexion" replace/>;
   if (permission === "super_admin" && !administrateur?.super_admin) return <Navigate to="/admin" replace/>;
   if (permission && permission !== "super_admin" && !aPermission(administrateur, permission)) return <Navigate to="/admin" replace/>;
@@ -33,7 +34,8 @@ function DestinationAdmin() {
 }
 
 function RoutesAdmin() {
-  const { connecte } = useAdminAuth();
+  const { connecte, initialisation } = useAdminAuth();
+  if (initialisation) return <div className="admin-loading" role="status">Vérification de la session…</div>;
   return <Routes>
     <Route path="connexion" element={connecte ? <DestinationAdmin/> : <ConnexionAdminAvecPied/>}/>
     <Route element={<AdminGarde/>}><Route element={<AdminLayout/>}>

@@ -115,9 +115,10 @@ Le fichier `.env.example` à la racine documente la configuration Docker Compose
 
 | Variable | Rôle |
 | --- | --- |
-| `SECRET_KEY`, `DEBUG`, `ALLOWED_HOSTS` | Sécurité et mode Django |
+| `ENVIRONMENT`, `SECRET_KEY`, `DEBUG`, `ALLOWED_HOSTS` | `ENVIRONMENT` est obligatoire (`development`, `test` ou `production`); `DEBUG` est désactivé par défaut et doit être explicitement `False` en production; la clé secrète est obligatoire en production |
 | `CORS_ALLOWED_ORIGINS`, `FRONTEND_URL`, `PUBLIC_FRONTEND_URL`, `VITE_API_URL` | Communication navigateur/API et base du lien public de vérification des reçus |
 | `DATABASE_URL` | URL PostgreSQL de Django (`postgresql://utilisateur:mot_de_passe@hôte:5432/base`) |
+| `REDIS_URL` | Redis partagé obligatoire en production pour synchroniser le throttling DRF et Axes entre processus/instances; sans lui, le backend refuse de démarrer |
 | `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD` | Identifiants du service PostgreSQL Docker Compose ; garder ces valeurs alignées sur `DATABASE_URL` |
 | `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET` | Accès privé du stockage de preuves Cloudinary, backend uniquement |
 | `NUMERO_MTN`, `NUMERO_MOOV`, `NUMERO_CELTIIS` | Numéros Mobile Money privés affichés selon l'opérateur configuré; une option vide est masquée |
@@ -244,7 +245,7 @@ La commande `python manage.py notifier_echeances_abonnement` envoie un rappel au
 
 Pour l'exécuter chaque jour sur Render, créer un service **Cron Job** depuis le dépôt, définir la commande `python manage.py notifier_echeances_abonnement`, le répertoire racine `backend`, et le cron `0 6 * * *` (Render interprète les horaires en UTC, soit 07:00 au Bénin). Partager les mêmes variables d'environnement backend, y compris les clés Vonage. Laisser `SMS_SIMULATION=True` jusqu'à validation des messages en environnement de test.
 
-Les dettes ne sont pas modifiables directement. `POST /api/dettes/{id}/correction/` demande `nouveau_montant` et `raison`; chaque correction conserve l'ancien montant et apparaît dans l'historique et l'audit. Le reçu PDF est disponible à `GET /api/dettes/{id}/recu/` et depuis la fiche client. Au premier téléchargement, il reçoit un UUID persistant, une date de génération et un QR code ; les téléchargements suivants gardent le même code. Le PDF présente un en-tête de marque, les informations du reçu hiérarchisées, le montant mis en évidence et un QR code. Scanner celui-ci ouvre `/verifier/{code}` sur le frontend, qui vérifie le code puis affiche le reçu PDF public via `GET /api/verifier/{code}/recu/`. Toute personne possédant le QR/code peut donc consulter ce reçu et les informations qu'il contient (boutique, client, montant et solde) ; ne partagez le document qu'avec ses destinataires. L'endpoint JSON `GET /api/verifier/{code}/` reste limité au statut d'authenticité et à la date. Les routes publiques de vérification sont limitées à 10 requêtes par minute et par adresse IP. Un code devient invalide si le document associé est supprimé. Le solde imprimé est le solde total du client, car les paiements actuels ne sont pas affectés à une dette particulière. Les reçus d'abonnement validés suivent le même design et possèdent également un QR code public.
+Les dettes ne sont pas modifiables directement. `POST /api/dettes/{id}/correction/` demande `nouveau_montant` et `raison`; chaque correction conserve l'ancien montant et apparaît dans l'historique et l'audit. Le reçu PDF complet est téléchargeable dans l'espace authentifié du commerçant, depuis `GET /api/dettes/{id}/recu/` ou la fiche client. Au premier téléchargement, il reçoit un UUID aléatoire persistant, une date de génération et un QR code ; les téléchargements suivants gardent le même code. Scanner le QR ouvre `/verifier/{code}` et ne révèle publiquement que l'authenticité et la date. Le PDF financier est réservé au commerçant connecté propriétaire ; le code seul ne donne pas accès aux montants ni aux identités. Un code devient invalide si le document associé est supprimé. Le solde imprimé est le solde total du client, car les paiements actuels ne sont pas affectés à une dette particulière. Les reçus d'abonnement validés suivent le même principe.
 
 ## Tests, couverture et lint
 
@@ -284,7 +285,12 @@ npm audit
 - `django-axes` bloque une combinaison email/adresse IP après 5 échecs pendant 15 minutes. La connexion est aussi limitée à 5 requêtes/minute par IP, l'inscription à 3/heure et le refresh JWT à 30/minute.
 - Les preuves de transfert sont des ressources Cloudinary authentifiées. Leur téléchargement passe par une vue protégée qui contrôle le commerçant ou le compte administratif avant de produire une URL signée très courte.
 - L'email est l'identifiant de connexion et est masqué dans Sentry et les logs. Les clés Brevo restent côté backend et la simulation est active par défaut.
-- En production, `DEBUG=False`, `ALLOWED_HOSTS` et `CORS_ALLOWED_ORIGINS` doivent contenir des valeurs exactes sans joker. HTTPS, HSTS, cookies sécurisés, `X-Content-Type-Options` et `X-Frame-Options` sont activés.
+- En production, définissez `ENVIRONMENT=production`. Le démarrage échoue si `DEBUG` est absent, vide ou vrai, ou si `SECRET_KEY` est absente/vide. `DEBUG` vaut `False` par défaut en développement; activez-le explicitement avec `DEBUG=True` dans votre `.env` local si nécessaire. `ALLOWED_HOSTS` et `CORS_ALLOWED_ORIGINS` doivent contenir des valeurs exactes sans joker. HTTPS, HSTS, cookies sécurisés, `X-Content-Type-Options` et `X-Frame-Options` sont activés.
+- Les créations de vente, dette et paiement exigent `Idempotency-Key` en production. Le frontend fournit et réutilise une clé lors d'un renvoi identique après une coupure réseau; les autres clients API doivent également envoyer une clé unique d'au moins 8 caractères.
+- Les compteurs DRF et Axes utilisent Redis lorsque `REDIS_URL` est défini. Avant de lancer plusieurs instances du backend, configurez une même instance Redis partagée ; le cache mémoire local ne synchronise pas les compteurs.
+- Les JWT commerçant et back-office sont transportés par cookies `HttpOnly`; les écritures exigent le jeton CSRF. Les jetons d'accès durent 5 minutes, les refresh durent 7 jours, tournent à chaque renouvellement et sont inscrits dans une liste noire. Le logout et la réinitialisation du mot de passe révoquent la session côté serveur. Configurez `CORS_ALLOWED_ORIGINS`, `CSRF_TRUSTED_ORIGINS`, `AUTH_COOKIE_SECURE=True` et `AUTH_COOKIE_SAMESITE=None` avec les domaines HTTPS exacts avant production.
+- Les listes de l'API sont paginées avec `?page=1&page_size=20`; la taille est plafonnée à 100. Les réponses ont les champs `count`, `next`, `previous` et `results`.
+- La suppression d'un client ou d'un produit via l'application archive l'enregistrement. Les ventes, dettes, paiements et rapports historiques restent consultables; un client ou produit archivé ne peut pas être réutilisé pour une nouvelle opération.
 - Le journal d'audit est filtré par commerçant, paginé et en lecture seule dans l'API et l'administration. Les champs téléphones, mots de passe, jetons et clés sont exclus ou masqués.
 - Sentry est inactif quand le DSN est vide. Les événements sont filtrés avant envoi; les logs de production sont des lignes JSON sans valeurs de requête.
 - L'export contient les données de la boutique sans hash de mot de passe. La suppression exige le mot de passe et efface les données métier, l'audit associé et les traces Axes liées au compte.
@@ -292,26 +298,31 @@ npm audit
 
 ## Sauvegarde et restauration
 
-Depuis `backend/`, créez une sauvegarde JSON logique portable :
+Depuis `backend/`, créez une sauvegarde logique JSON compressée et chiffrée avec Fernet :
 
 ```bash
 python manage.py sauvegarde_db
-# ou choisir le fichier de sortie
-python manage.py sauvegarde_db --sortie backups/avant-maintenance.json
+# copie locale chiffrée facultative, utile pour un exercice contrôlé
+python manage.py sauvegarde_db --sortie backups/avant-maintenance.json.gz.fernet
 ```
 
-Le fichier comprend les données utilisateur et les hashes de mots de passe : stockez-le dans un emplacement privé et chiffré, avec des accès limités. Pour restaurer une sauvegarde dans une base vide, installez les dépendances, configurez la base, puis :
+La commande exige `BACKUP_ENCRYPTION_KEY`; en production elle exige aussi `BACKUP_S3_BUCKET` et envoie le fichier vers un stockage objet externe via les identifiants AWS du service. Le contenu est chiffré avant transfert, vérifié par Fernet et accompagné d'une empreinte SHA-256. Configurez une règle de cycle de vie dans le bucket pour la rétention voulue et protégez les droits de lecture/suppression. Générez une clé Fernet puis conservez-la comme secret dans l'hébergeur, jamais dans Git :
 
 ```bash
-python manage.py migrate
-python manage.py loaddata backups/avant-maintenance.json
+python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
 ```
 
-Le test `test_sauvegarde_json_peut_etre_restauree` vérifie la création et la restauration d'un enregistrement depuis ce format.
+Pour restaurer, téléchargez un fichier chiffré vers une nouvelle base PostgreSQL isolée, définissez la même clé de déchiffrement, exécutez `python manage.py migrate`, puis `python manage.py restaure_db chemin/backup.json.gz.fernet`. Cette commande refuse par défaut une cible production; la confirmation `--confirmer-production` doit rester exceptionnelle. Validez les comptes, produits, clients, ventes, dettes, paiements, stocks et abonnements avant de basculer le service. Le test `test_sauvegarde_chiffree_peut_etre_restauree` couvre le chiffrement et la restauration locale; il ne remplace pas un exercice réel sur PostgreSQL et le stockage distant.
+
+### Objectifs RPO/RTO et exercice de restauration
+
+Objectifs provisoires à confirmer selon le plan d'hébergement : **RPO cible 24 h** avec une sauvegarde logique quotidienne externalisée, et **RTO cible 4 h**. Le code chiffre et dépose une copie externe si le bucket est configuré; le cron, ses secrets, sa rétention et le premier exercice de restauration restent à créer dans les comptes d'hébergement.
+
+Pour tester une restauration sans toucher à la base de production : créez une base PostgreSQL temporaire isolée, configurez `DATABASE_URL` vers cette base, exécutez les migrations et `python manage.py restaure_db`, puis vérifiez les données financières et les relations attendues. Supprimez ensuite uniquement cette base temporaire après validation.
 
 ### Sauvegardes automatiques Render PostgreSQL
 
-Render effectue une sauvegarde continue avec restauration à un instant donné (PITR) pour les bases PostgreSQL payantes. La fenêtre de restauration indiquée par la documentation actuelle est de **3 jours pour Hobby** et **7 jours pour Pro ou supérieur**; les bases Free n'ont pas ces capacités de restauration. Un export logique déclenché depuis le tableau de bord est conservé 7 jours. Pour une rétention plus longue, téléchargez l'export dans un stockage privé ou automatisez `pg_dump` vers un stockage externe.
+Créez dans Render un **Cron Job** quotidien relié au même dépôt et ajoutez les variables de base de données, `BACKUP_ENCRYPTION_KEY`, `BACKUP_S3_BUCKET`, `BACKUP_S3_PREFIX`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` et `AWS_REGION`. Utilisez `python manage.py sauvegarde_db` comme commande; paramétrez le calendrier, les droits du bucket et une règle de rétention indépendante. Vérifiez les exécutions et effectuez un exercice de restauration dans une base temporaire avant d'annoncer le RPO/RTO.
 
 Consulter la [documentation Render sur la récupération et les sauvegardes PostgreSQL](https://render.com/docs/postgresql-backups) avant de choisir le plan. Après une restauration PITR, Render crée une nouvelle instance : validez son contenu, puis remplacez la connexion de l'application par celle de l'instance restaurée.
 

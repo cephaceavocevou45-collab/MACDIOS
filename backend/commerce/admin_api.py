@@ -20,11 +20,14 @@ from django.utils.dateparse import parse_date
 from django.utils.encoding import force_bytes
 from django.utils.http import urlsafe_base64_encode
 from rest_framework import generics, serializers, status
-from rest_framework.decorators import api_view, permission_classes, throttle_classes
+from rest_framework.decorators import api_view, authentication_classes, permission_classes, throttle_classes
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from rest_framework_simplejwt.tokens import RefreshToken
+from drf_spectacular.types import OpenApiTypes
+from drf_spectacular.utils import OpenApiResponse, extend_schema, extend_schema_view
+from .authentication import verifier_csrf
+from .jwt_sessions import creer_jetons_session, definir_cookies_auth
 
 from notifications.email import ErreurEnvoiEmail, envoyer_email
 
@@ -33,6 +36,7 @@ from .admin_serializers import (
     SousAdminCreationSerializer, SousAdminModificationSerializer, SousAdminSerializer,
     UtilisateurBackOfficeSerializer,
 )
+from .api_docs import ConnexionAdminReponseSerializer, EXEMPLE_ERREUR, ReponseListePaginee
 from .audit import enregistrer_evenement
 from .models import (
     Abonnement, Commercant, ConfigurationEssai, DemandePaiementManuel, Dette, JournalAudit, Paiement,
@@ -53,11 +57,18 @@ def _montant_texte(montant):
     return f"{montant:.2f}"
 
 
+@extend_schema(
+    tags=["Auth"], summary="Connexion au back-office",
+    request=ConnexionSerializer,
+    responses={200: ConnexionAdminReponseSerializer, 400: EXEMPLE_ERREUR, 429: EXEMPLE_ERREUR},
+)
 @api_view(["POST"])
+@authentication_classes([])
 @permission_classes([AllowAny])
 @throttle_classes([ThrottleConnexionAdmin])
 def connexion_backoffice(request):
     """Délivre un JWT uniquement aux comptes administratifs actifs."""
+    verifier_csrf(request)
     serializer = ConnexionSerializer(data=request.data, context={"request": request})
     if not serializer.is_valid():
         return Response({"detail": "Email ou mot de passe incorrect."}, status=status.HTTP_400_BAD_REQUEST)
@@ -72,10 +83,8 @@ def connexion_backoffice(request):
         nouvelles_valeurs={"role": "super_admin" if administrateur.is_superuser else "sous_admin"},
         adresse_ip=request.META.get("REMOTE_ADDR"),
     )
-    jeton = RefreshToken.for_user(administrateur)
-    return Response({
-        "access": str(jeton.access_token),
-        "refresh": str(jeton),
+    access, refresh = creer_jetons_session(administrateur)
+    reponse = Response({
         "administrateur": {
             "id": str(administrateur.pk),
             "email": administrateur.email,
@@ -84,6 +93,7 @@ def connexion_backoffice(request):
             "permissions": droits,
         },
     })
+    return definir_cookies_auth(reponse, access, refresh)
 
 
 class VueBackOffice(APIView):
@@ -92,6 +102,10 @@ class VueBackOffice(APIView):
     permission_classes = [PermissionBackOffice]
 
 
+@extend_schema_view(
+    get=extend_schema(tags=["Admin"], summary="Lire la configuration de l'essai gratuit", responses={200: ConfigurationEssaiSerializer}),
+    patch=extend_schema(tags=["Admin"], summary="Modifier la configuration de l'essai gratuit", request=ConfigurationEssaiSerializer, responses={200: ConfigurationEssaiSerializer, 400: EXEMPLE_ERREUR}),
+)
 class ConfigurationOffreEssaiBackOffice(APIView):
     """Consultation et modification réservées au super-admin."""
 
@@ -121,6 +135,7 @@ class ConfigurationOffreEssaiBackOffice(APIView):
 class StatistiquesPlateforme(VueBackOffice):
     permission_requise = "voir_statistiques"
 
+    @extend_schema(tags=["Admin"], summary="Consulter les statistiques globales", responses={200: OpenApiTypes.OBJECT})
     def get(self, request):
         maintenant = timezone.now()
         debut_mois = timezone.make_aware(datetime.combine(timezone.localdate().replace(day=1), time.min))
@@ -176,6 +191,7 @@ class ListeUtilisateursBackOffice(generics.ListAPIView):
 class ActionUtilisateurBackOffice(VueBackOffice):
     permission_requise = "suspendre_utilisateur"
 
+    @extend_schema(tags=["Admin"], summary="Suspendre ou réactiver un commerçant", request=MotifRejetAdminSerializer, responses={200: UtilisateurBackOfficeSerializer, 400: EXEMPLE_ERREUR, 404: EXEMPLE_ERREUR})
     def post(self, request, pk, action):
         try:
             with transaction.atomic():
@@ -229,6 +245,7 @@ class PaiementsEnAttenteBackOffice(generics.ListAPIView):
 class DecisionPaiementBackOffice(VueBackOffice):
     permission_requise = "valider_paiements"
 
+    @extend_schema(tags=["Admin"], summary="Valider ou rejeter une demande de paiement", request=MotifRejetAdminSerializer, responses={200: DemandePaiementAdminSerializer, 400: EXEMPLE_ERREUR, 404: EXEMPLE_ERREUR, 409: EXEMPLE_ERREUR})
     def post(self, request, pk, action):
         demande = DemandePaiementManuel.objects.filter(pk=pk).first()
         if demande is None:
@@ -249,6 +266,7 @@ class DecisionPaiementBackOffice(VueBackOffice):
 class PreuvePaiementBackOffice(VueBackOffice):
     permission_requise = "valider_paiements"
 
+    @extend_schema(tags=["Admin"], summary="Télécharger la preuve d'un paiement en attente", responses={200: OpenApiResponse(response=OpenApiTypes.BINARY, description="Fichier de preuve."), 404: EXEMPLE_ERREUR})
     def get(self, request, pk):
         demande = DemandePaiementManuel.objects.filter(pk=pk).first()
         if demande is None or not demande.preuve:
@@ -307,6 +325,10 @@ class AuditPlateformeBackOffice(generics.ListAPIView):
         return queryset.order_by("-date", "-id")
 
 
+@extend_schema_view(
+    get=extend_schema(tags=["Admin"], summary="Lister les sous-administrateurs", responses={200: ReponseListePaginee}),
+    post=extend_schema(tags=["Admin"], summary="Inviter un sous-administrateur", request=SousAdminCreationSerializer, responses={201: SousAdminSerializer, 400: EXEMPLE_ERREUR}),
+)
 class GestionSousAdminsBackOffice(APIView):
     permission_classes = [SuperAdminUniquement]
 
@@ -346,6 +368,9 @@ class GestionSousAdminsBackOffice(APIView):
         return Response(SousAdminSerializer(profil).data, status=status.HTTP_201_CREATED)
 
 
+@extend_schema_view(
+    patch=extend_schema(tags=["Admin"], summary="Modifier les droits ou désactiver un sous-administrateur", request=SousAdminModificationSerializer, responses={200: SousAdminSerializer, 400: EXEMPLE_ERREUR, 404: EXEMPLE_ERREUR}),
+)
 class DetailSousAdminBackOffice(APIView):
     permission_classes = [SuperAdminUniquement]
 

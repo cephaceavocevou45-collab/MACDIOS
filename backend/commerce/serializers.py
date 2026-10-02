@@ -9,6 +9,7 @@ from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
 from django.utils import timezone
 from rest_framework import serializers
+from drf_spectacular.utils import extend_schema_field
 
 from .models import Abonnement, Client, ConfigurationEssai, CorrectionDette, DemandePaiementManuel, Dette, JournalAudit, Paiement, PaiementAbonnementHistorique, Plan, Produit, Vente
 from .validators import valider_telephone_benin
@@ -93,8 +94,8 @@ class ConnexionSerializer(serializers.Serializer):
 class ProduitSerializer(serializers.ModelSerializer):
     class Meta:
         model = Produit
-        fields = ["id", "nom", "prix", "quantite_stock", "seuil_alerte", "date_creation"]
-        read_only_fields = ["id", "date_creation"]
+        fields = ["id", "nom", "prix", "quantite_stock", "seuil_alerte", "date_creation", "actif"]
+        read_only_fields = ["id", "date_creation", "actif"]
 
 
 class ClientSerializer(serializers.ModelSerializer):
@@ -102,25 +103,27 @@ class ClientSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Client
-        fields = ["id", "nom", "telephone", "solde"]
-        read_only_fields = ["id", "solde"]
+        fields = ["id", "nom", "telephone", "solde", "actif"]
+        read_only_fields = ["id", "solde", "actif"]
 
 
 class VenteSerializer(serializers.ModelSerializer):
     produit = serializers.PrimaryKeyRelatedField(queryset=Produit.objects.none())
     client = serializers.PrimaryKeyRelatedField(queryset=Client.objects.none(), required=False, allow_null=True)
+    produit_nom = serializers.CharField(source="produit.nom", read_only=True)
+    client_nom = serializers.CharField(source="client.nom", read_only=True, allow_null=True)
 
     class Meta:
         model = Vente
-        fields = ["id", "produit", "client", "quantite", "prix_unitaire", "total", "date"]
+        fields = ["id", "produit", "produit_nom", "client", "client_nom", "quantite", "prix_unitaire", "total", "date"]
         read_only_fields = ["id", "prix_unitaire", "total", "date"]
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         request = self.context.get("request")
         if request and request.user.is_authenticated:
-            self.fields["produit"].queryset = Produit.objects.filter(commercant=request.user)
-            self.fields["client"].queryset = Client.objects.filter(commercant=request.user)
+            self.fields["produit"].queryset = Produit.objects.filter(commercant=request.user, actif=True)
+            self.fields["client"].queryset = Client.objects.filter(commercant=request.user, actif=True)
 
     @transaction.atomic
     def create(self, validated_data):
@@ -188,7 +191,7 @@ class DetteSerializer(serializers.ModelSerializer):
         super().__init__(*args, **kwargs)
         request = self.context.get("request")
         if request and request.user.is_authenticated:
-            self.fields["client"].queryset = Client.objects.filter(commercant=request.user)
+            self.fields["client"].queryset = Client.objects.filter(commercant=request.user, actif=True)
 
 
 class PaiementSerializer(serializers.ModelSerializer):
@@ -203,13 +206,7 @@ class PaiementSerializer(serializers.ModelSerializer):
         super().__init__(*args, **kwargs)
         request = self.context.get("request")
         if request and request.user.is_authenticated:
-            self.fields["client"].queryset = Client.objects.filter(commercant=request.user)
-
-    def validate(self, attrs):
-        if attrs["montant"] > attrs["client"].solde:
-            raise serializers.ValidationError({"montant": "Le paiement dépasse le solde dû par ce client."})
-        return attrs
-
+            self.fields["client"].queryset = Client.objects.filter(commercant=request.user, actif=True)
 
 class PlanSerializer(serializers.ModelSerializer):
     class Meta:
@@ -227,6 +224,7 @@ class AbonnementSerializer(serializers.ModelSerializer):
         fields = ["statut", "plan", "date_debut", "date_fin", "jours_restants"]
         read_only_fields = fields
 
+    @extend_schema_field(serializers.IntegerField())
     def get_jours_restants(self, abonnement):
         secondes = (abonnement.date_fin - timezone.now()).total_seconds()
         return max(0, math.ceil(secondes / 86400))
@@ -278,6 +276,7 @@ class DemandePaiementManuelSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("Cet opérateur Mobile Money n'est pas disponible actuellement.")
         return operateur
 
+    @extend_schema_field(serializers.CharField())
     def get_operateur_nom(self, demande):
         return demande.get_operateur_display() or "Opérateur non renseigné"
 

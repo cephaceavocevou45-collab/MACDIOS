@@ -1,5 +1,5 @@
 // Modifiez cette configuration pour adapter le nom, les coordonnées et les liens publics.
-const whatsappNobi = "https://wa.me/2290157179683";
+const whatsappNobi = "https://wa.me/2290121212121";
 
 export const branding = {
   appName: "Nobi",
@@ -18,18 +18,16 @@ export const branding = {
   },
   contact: {
     email: "cephacemacevo@gmail.com",
-    telephone: "+2290157179683",
+    telephone: "+2290121212121",
     whatsapp: whatsappNobi,
   },
-  // Tarif du forfait mensuel initial, à garder aligné avec le plan administré dans Django.
-  monthlyPrice: "2 500 FCFA",
-  // Remplacez les URL qui contiennent VOTRE_ par les liens officiels de vos pages.
+  // Laissez vide tant que l'adresse officielle du réseau n'est pas connue.
   socials: {
-    facebook: "https://www.facebook.com/VOTRE_PAGE_FACEBOOK",
-    instagram: "https://www.instagram.com/VOTRE_COMPTE_INSTAGRAM",
+    facebook: "",
+    instagram: "",
     whatsapp: whatsappNobi,
-    linkedin: "https://www.linkedin.com/company/VOTRE_PAGE_LINKEDIN",
-    tiktok: "https://www.tiktok.com/@VOTRE_COMPTE_TIKTOK",
-    youtube: "https://www.youtube.com/@VOTRE_CHAINE_YOUTUBE",
+    linkedin: "",
+    tiktok: "",
+    youtube: "",
   },
 };

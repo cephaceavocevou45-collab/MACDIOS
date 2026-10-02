@@ -42,16 +42,24 @@ class CommercantAdmin(UserAdmin):
 
 @admin.register(Produit)
 class ProduitAdmin(admin.ModelAdmin):
-    list_display = ("nom", "commercant", "prix", "quantite_stock", "seuil_alerte")
-    list_filter = ("commercant",)
+    list_display = ("nom", "commercant", "prix", "quantite_stock", "seuil_alerte", "actif")
+    list_filter = ("commercant", "actif")
     search_fields = ("nom", "commercant__telephone", "commercant__nom_boutique")
+
+    def has_delete_permission(self, request, obj=None):
+        # Les produits sont archivés depuis l'API, jamais supprimés de l'admin.
+        return False
 
 
 @admin.register(Client)
 class ClientAdmin(admin.ModelAdmin):
-    list_display = ("nom", "telephone", "commercant")
-    list_filter = ("commercant",)
+    list_display = ("nom", "telephone", "commercant", "actif")
+    list_filter = ("commercant", "actif")
     search_fields = ("nom", "telephone")
+
+    def has_delete_permission(self, request, obj=None):
+        # Préserve les références financières même via l'administration Django.
+        return False
 
 
 @admin.register(Vente)

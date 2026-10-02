@@ -1,6 +1,7 @@
 """Sérialise les données strictement nécessaires au back-office."""
 
 from rest_framework import serializers
+from drf_spectacular.utils import extend_schema_field
 from django.utils import timezone
 
 from .models import Commercant, ConfigurationEssai, DemandePaiementManuel, JournalAudit, ProfilSousAdmin
@@ -70,6 +71,7 @@ class UtilisateurBackOfficeSerializer(serializers.ModelSerializer):
         fields = ["id", "email", "nom_boutique", "is_active", "motif_suspension", "suspendu_le", "statut_abonnement", "date_fin_abonnement", "date_joined"]
         read_only_fields = fields
 
+    @extend_schema_field(serializers.CharField())
     def get_statut_abonnement(self, utilisateur):
         abonnement = getattr(utilisateur, "abonnement", None)
         if abonnement is None:
@@ -78,6 +80,7 @@ class UtilisateurBackOfficeSerializer(serializers.ModelSerializer):
             return "expire"
         return abonnement.statut
 
+    @extend_schema_field(serializers.DateTimeField(allow_null=True))
     def get_date_fin_abonnement(self, utilisateur):
         abonnement = getattr(utilisateur, "abonnement", None)
         return abonnement.date_fin if abonnement else None
@@ -95,6 +98,7 @@ class DemandePaiementAdminSerializer(serializers.ModelSerializer):
         fields = ["id", "commercant_email", "nom_boutique", "plan", "plan_nom", "montant", "operateur", "operateur_nom", "reference_transaction", "preuve_disponible", "statut", "date_demande", "date_decision", "motif_rejet"]
         read_only_fields = fields
 
+    @extend_schema_field(serializers.BooleanField())
     def get_preuve_disponible(self, demande):
         return bool(demande.preuve)
 

@@ -8,34 +8,42 @@ from django.conf import settings
 from django.contrib.auth import get_user_model, password_validation
 from django.contrib.auth.tokens import default_token_generator
 from django.core.exceptions import ValidationError as DjangoValidationError
+from django.middleware.csrf import get_token
 from django.db import DatabaseError, IntegrityError, connection
 from django.db import transaction
 from django.http import FileResponse, Http404, HttpResponse
-from django.db.models import DecimalField, F, Sum
-from django.db.models.functions import Coalesce
+from django.db.models import DecimalField, F, OuterRef, Q, Subquery, Sum, Value
+from django.db.models.functions import Coalesce, TruncDate
 from django.utils.encoding import force_bytes, force_str
 from django.utils import timezone
 from django.utils.dateparse import parse_date
 from django.utils.html import format_html
 from django.utils.http import urlsafe_base64_decode, urlsafe_base64_encode
 from rest_framework import generics, mixins, serializers, status, viewsets
-from rest_framework.decorators import action, api_view, permission_classes, throttle_classes, throttle_scope
+from rest_framework.decorators import action, api_view, authentication_classes, permission_classes, throttle_classes, throttle_scope
 from rest_framework.exceptions import APIException
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
-from rest_framework_simplejwt.tokens import RefreshToken
-from rest_framework_simplejwt.serializers import TokenRefreshSerializer
 from rest_framework_simplejwt.views import TokenRefreshView
-from drf_spectacular.utils import OpenApiExample, OpenApiParameter, OpenApiResponse, OpenApiTypes, extend_schema, extend_schema_view
+from drf_spectacular.utils import OpenApiExample, OpenApiParameter, OpenApiResponse, OpenApiTypes, extend_schema, extend_schema_view, inline_serializer
 
 from .api_docs import (
     EXEMPLE_CLIENT, EXEMPLE_ERREUR, EXEMPLE_NON_AUTORISE, EXEMPLE_PRODUIT,
-    EXEMPLE_VENTE, ConnexionReponseSerializer, InscriptionReponseSerializer,
+    ConnexionReponseSerializer, InscriptionReponseSerializer,
+    ConfirmationSuppressionSerializer, CsrfTokenReponseSerializer,
+    OffreEssaiReponseSerializer, ReponseDetailSerializer,
+    SanteReponseSerializer, SessionReponseSerializer,
 )
 from .audit import enregistrer_evenement, suspendre_audit
+from .idempotence import CreationIdempotenteMixin
 from .models import Abonnement, Client, ConfigurationEssai, CorrectionDette, DemandePaiementManuel, Dette, JournalAudit, Paiement, PaiementAbonnementHistorique, Plan, Produit, Vente
-from .pagination import PaginationAudit
+from .pagination import PaginationAudit, PaginationStandard
 from .permissions import AbonnementAutoriseEcriture, EstCommercantAuthentifie, EstProprietaireObjet
+from .authentication import verifier_csrf
+from .jwt_sessions import (
+    COOKIE_REFRESH, creer_jetons_session, definir_cookies_auth, effacer_cookies_auth,
+    enregistrer_rotation, revoquer_session, revoquer_sessions_utilisateur, session_depuis_refresh,
+)
 from .services.export_pdf import construire_export_pdf
 from .services.recu_pdf import construire_recu_certifie
 from .throttles import (
@@ -52,6 +60,19 @@ from notifications.email import ErreurEnvoiEmail, envoyer_email
 
 Commercant = get_user_model()
 logger = logging.getLogger(__name__)
+
+
+def _schema_liste_paginee(nom, serializer_item):
+    """Décrit la forme réellement renvoyée par le paginateur DRF."""
+    return inline_serializer(
+        name=nom,
+        fields={
+            "count": serializers.IntegerField(),
+            "next": serializers.URLField(allow_null=True),
+            "previous": serializers.URLField(allow_null=True),
+            "results": serializer_item(many=True),
+        },
+    )
 
 
 def _date_recu(valeur):
@@ -99,12 +120,20 @@ def _pdf_recu_abonnement(demande):
     )
 
 
+def _reponse_liste_paginee(request, queryset, serializer_class):
+    """Sérialise une page bornée d'un endpoint fonctionnel retournant une liste."""
+    pagination = PaginationStandard()
+    page = pagination.paginate_queryset(queryset, request)
+    return pagination.get_paginated_response(serializer_class(page, many=True).data)
+
+
 @extend_schema(
     tags=["Auth"], summary="Inscrire un commerçant", request=InscriptionSerializer,
     responses={201: InscriptionReponseSerializer, 400: EXEMPLE_ERREUR, 429: EXEMPLE_NON_AUTORISE},
     examples=[OpenApiExample("Inscription", value={"email": "commercant@example.com", "telephone": "+22961020304", "nom_boutique": "Ma boutique", "mot_de_passe": "MotDePasse123!", "accepte_conditions": True}, request_only=True)],
 )
 @api_view(["POST"])
+@authentication_classes([])
 @permission_classes([AllowAny])
 @throttle_classes([ThrottleInscription])
 @throttle_scope("inscription")
@@ -140,10 +169,12 @@ def inscription(request):
     examples=[OpenApiExample("Connexion", value={"email": "commercant@example.com", "mot_de_passe": "MotDePasse123!"}, request_only=True)],
 )
 @api_view(["POST"])
+@authentication_classes([])
 @permission_classes([AllowAny])
 @throttle_classes([ThrottleConnexion])
 @throttle_scope("connexion")
 def connexion(request):
+    verifier_csrf(request)
     serializer = ConnexionSerializer(data=request.data, context={"request": request})
     try:
         serializer.is_valid(raise_exception=True)
@@ -192,26 +223,93 @@ def connexion(request):
         nouvelles_valeurs={"resultat": "reussie"},
         adresse_ip=request._request.META.get("REMOTE_ADDR"),
     )
-    refresh = RefreshToken.for_user(user)
-    return Response({
-        "refresh": str(refresh), "access": str(refresh.access_token),
+    access, refresh = creer_jetons_session(user)
+    reponse = Response({
         "commercant": {"id": str(user.id), "email": user.email, "telephone": user.telephone, "nom_boutique": user.nom_boutique},
     })
+    return definir_cookies_auth(reponse, access, refresh)
 
 
 class RafraichirJetonView(TokenRefreshView):
     """Renouvelle un access token à partir d'un refresh JWT valide."""
 
     throttle_classes = [ThrottleRefresh]
+    authentication_classes = []
     throttle_scope = "refresh"
 
     @extend_schema(
         tags=["Auth"], summary="Renouveler le jeton d'accès",
-        request=TokenRefreshSerializer, responses={200: TokenRefreshSerializer, 401: EXEMPLE_NON_AUTORISE},
-        examples=[OpenApiExample("Refresh", value={"refresh": "<refresh-jwt>"}, request_only=True)],
+        description="Lit le refresh token depuis le cookie HttpOnly, le fait tourner et remet le nouvel access token dans un cookie HttpOnly.",
+        request=None, responses={200: ReponseDetailSerializer, 401: EXEMPLE_NON_AUTORISE},
     )
     def post(self, request, *args, **kwargs):
-        return super().post(request, *args, **kwargs)
+        verifier_csrf(request)
+        refresh_brut = request.COOKIES.get(COOKIE_REFRESH)
+        if not refresh_brut:
+            return Response({"detail": "Session expirée. Reconnectez-vous."}, status=status.HTTP_401_UNAUTHORIZED)
+        try:
+            with transaction.atomic():
+                session, _ = session_depuis_refresh(refresh_brut)
+                serializer = self.get_serializer(data={"refresh": refresh_brut})
+                serializer.is_valid(raise_exception=True)
+                donnees = serializer.validated_data
+                nouveau_refresh = donnees.get("refresh", refresh_brut)
+                enregistrer_rotation(session, nouveau_refresh)
+                reponse = Response({"detail": "Session renouvelée."})
+                return definir_cookies_auth(reponse, donnees["access"], nouveau_refresh)
+        except Exception:
+            return effacer_cookies_auth(Response({"detail": "Session expirée ou révoquée. Reconnectez-vous."}, status=401))
+
+
+@extend_schema(tags=["Auth"], summary="Obtenir un jeton CSRF pour les requêtes avec cookies", responses={200: CsrfTokenReponseSerializer})
+@api_view(["GET"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+def jeton_csrf(request):
+    """Prépare le cookie CSRF et retourne le jeton à garder uniquement en mémoire."""
+    return Response({"csrfToken": get_token(request._request)})
+
+
+@extend_schema(tags=["Auth"], summary="Vérifier la session actuellement authentifiée", responses={200: SessionReponseSerializer, 401: EXEMPLE_NON_AUTORISE})
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def session_authentifiee(request):
+    """Expose l'identité non sensible de la session après rechargement de page."""
+    user = request.user
+    est_admin = bool(user.is_staff or user.is_superuser)
+    permissions = ["*"] if user.is_superuser else (
+        user.profil_sous_admin.permissions if est_admin and hasattr(user, "profil_sous_admin") else []
+    )
+    return Response({
+        "administrateur": {
+            "id": str(user.pk), "email": user.email,
+            "nom": user.profil_sous_admin.nom if est_admin and hasattr(user, "profil_sous_admin") else user.nom_boutique,
+            "super_admin": user.is_superuser, "permissions": permissions,
+        } if est_admin else None,
+        "commercant": None if est_admin else {
+            "id": str(user.pk), "email": user.email,
+            "telephone": user.telephone, "nom_boutique": user.nom_boutique,
+        },
+    })
+
+
+@extend_schema(tags=["Auth"], summary="Révoquer la session et supprimer les cookies", request=None, responses={200: ReponseDetailSerializer, 403: EXEMPLE_ERREUR})
+@api_view(["POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+def deconnexion(request):
+    """Révoque côté serveur la session courante puis efface ses cookies."""
+    verifier_csrf(request)
+    refresh_brut = request.COOKIES.get(COOKIE_REFRESH)
+    if refresh_brut:
+        try:
+            with transaction.atomic():
+                session, jeton = session_depuis_refresh(refresh_brut)
+                revoquer_session(session)
+                jeton.blacklist()
+        except Exception:
+            pass
+    return effacer_cookies_auth(Response({"detail": "Vous êtes déconnecté."}))
 
 
 @extend_schema(
@@ -220,6 +318,7 @@ class RafraichirJetonView(TokenRefreshView):
     responses={200: OpenApiTypes.OBJECT, 400: EXEMPLE_ERREUR, 429: EXEMPLE_NON_AUTORISE},
 )
 @api_view(["POST"])
+@authentication_classes([])
 @permission_classes([AllowAny])
 @throttle_scope("mot_de_passe_oublie")
 def mot_de_passe_oublie(request):
@@ -265,6 +364,7 @@ def mot_de_passe_oublie(request):
     responses={200: OpenApiTypes.OBJECT, 400: EXEMPLE_ERREUR, 429: EXEMPLE_NON_AUTORISE},
 )
 @api_view(["POST"])
+@authentication_classes([])
 @permission_classes([AllowAny])
 @throttle_scope("reinitialisation_mot_de_passe")
 def reinitialiser_mot_de_passe(request):
@@ -287,11 +387,12 @@ def reinitialiser_mot_de_passe(request):
             return Response({"nouveau_mot_de_passe": erreur.messages}, status=400)
         utilisateur.set_password(donnees["nouveau_mot_de_passe"])
         utilisateur.save(update_fields=["password"])
+        revoquer_sessions_utilisateur(utilisateur)
     return Response({"detail": "Votre mot de passe a été mis à jour. Vous pouvez vous connecter."})
 
 
 @extend_schema_view(
-    list=extend_schema(tags=["Produits"], summary="Lister les produits du commerçant", parameters=[OpenApiParameter("rupture", bool, OpenApiParameter.QUERY, description="true pour ne retourner que les produits au seuil d'alerte")], responses={200: ProduitSerializer(many=True), 401: EXEMPLE_NON_AUTORISE}, examples=[OpenApiExample("Produits", value=[EXEMPLE_PRODUIT.value], response_only=True)]),
+    list=extend_schema(tags=["Produits"], summary="Lister les produits du commerçant", parameters=[OpenApiParameter("rupture", bool, OpenApiParameter.QUERY, description="true pour ne retourner que les produits au seuil d'alerte")], responses={200: _schema_liste_paginee("ProduitsPaginee", ProduitSerializer), 401: EXEMPLE_NON_AUTORISE}),
     create=extend_schema(tags=["Produits"], summary="Créer un produit", responses={201: ProduitSerializer, 400: EXEMPLE_ERREUR, 401: EXEMPLE_NON_AUTORISE, 403: EXEMPLE_NON_AUTORISE}, examples=[EXEMPLE_PRODUIT]),
     retrieve=extend_schema(tags=["Produits"], summary="Consulter un produit", responses={200: ProduitSerializer, 401: EXEMPLE_NON_AUTORISE, 404: EXEMPLE_ERREUR}, examples=[EXEMPLE_PRODUIT]),
     update=extend_schema(tags=["Produits"], summary="Remplacer un produit", responses={400: EXEMPLE_ERREUR, 403: EXEMPLE_NON_AUTORISE, 404: EXEMPLE_ERREUR}),
@@ -300,6 +401,7 @@ def reinitialiser_mot_de_passe(request):
 )
 class VueProprietaire(viewsets.ModelViewSet):
     permission_classes = [EstCommercantAuthentifie, AbonnementAutoriseEcriture, EstProprietaireObjet]
+    pagination_class = PaginationStandard
 
     def perform_create(self, serializer):
         serializer.save(commercant=self.request.user)
@@ -307,16 +409,31 @@ class VueProprietaire(viewsets.ModelViewSet):
 
 class ProduitViewSet(VueProprietaire):
     serializer_class = ProduitSerializer
+    queryset = Produit.objects.none()
+    lookup_value_regex = r"\d+"
 
     def get_queryset(self):
         queryset = Produit.objects.filter(commercant=self.request.user)
+        recherche = self.request.query_params.get("recherche", "").strip()[:120]
+        if recherche:
+            queryset = queryset.filter(nom__icontains=recherche)
+        if self.action != "retrieve":
+            queryset = queryset.filter(actif=True)
         if self.request.query_params.get("rupture", "").lower() == "true":
             queryset = queryset.filter(quantite_stock__lte=F("seuil_alerte"))
         return queryset
 
+    def perform_destroy(self, instance):
+        with transaction.atomic():
+            produit = Produit.objects.select_for_update().get(
+                pk=instance.pk, commercant=self.request.user, actif=True
+            )
+            produit.actif = False
+            produit.save(update_fields=["actif"])
+
 
 @extend_schema_view(
-    list=extend_schema(tags=["Clients"], summary="Lister les clients et leur solde", responses={200: ClientSerializer(many=True), 401: EXEMPLE_NON_AUTORISE}, examples=[OpenApiExample("Liste des clients", value=[EXEMPLE_CLIENT.value], response_only=True)]),
+    list=extend_schema(tags=["Clients"], summary="Lister les clients et leur solde", responses={200: _schema_liste_paginee("ClientsPaginee", ClientSerializer), 401: EXEMPLE_NON_AUTORISE}),
     create=extend_schema(tags=["Clients"], summary="Créer un client", responses={201: ClientSerializer, 400: EXEMPLE_ERREUR, 401: EXEMPLE_NON_AUTORISE, 403: EXEMPLE_NON_AUTORISE}, examples=[OpenApiExample("Nouveau client", value={"nom": "Awa", "telephone": "22990000001"}, request_only=True), EXEMPLE_CLIENT]),
     retrieve=extend_schema(tags=["Clients"], summary="Consulter un client et son solde", responses={200: ClientSerializer, 401: EXEMPLE_NON_AUTORISE, 404: EXEMPLE_ERREUR}, examples=[EXEMPLE_CLIENT]),
     update=extend_schema(tags=["Clients"], summary="Remplacer un client", responses={400: EXEMPLE_ERREUR, 403: EXEMPLE_NON_AUTORISE, 404: EXEMPLE_ERREUR}),
@@ -325,18 +442,49 @@ class ProduitViewSet(VueProprietaire):
 )
 class ClientViewSet(VueProprietaire):
     serializer_class = ClientSerializer
+    queryset = Client.objects.none()
+    lookup_value_regex = r"\d+"
 
     def get_queryset(self):
-        return Client.objects.filter(commercant=self.request.user)
+        champ_montant = DecimalField(max_digits=14, decimal_places=2)
+        dettes = Dette.objects.filter(client_id=OuterRef("pk")).order_by().values("client_id")
+        dettes = dettes.annotate(total=Sum("montant")).values("total")[:1]
+        paiements = Paiement.objects.filter(client_id=OuterRef("pk")).order_by().values("client_id")
+        paiements = paiements.annotate(total=Sum("montant")).values("total")[:1]
+        queryset = Client.objects.filter(commercant=self.request.user).annotate(
+            _total_dettes_annote=Coalesce(Subquery(dettes, output_field=champ_montant), Value(0), output_field=champ_montant),
+            _total_paiements_annote=Coalesce(Subquery(paiements, output_field=champ_montant), Value(0), output_field=champ_montant),
+        )
+        recherche = self.request.query_params.get("recherche", "").strip()[:120]
+        if recherche:
+            queryset = queryset.filter(Q(nom__icontains=recherche) | Q(telephone__icontains=recherche))
+        # Les listes et les opérations ordinaires portent sur les clients actifs.
+        # Le détail reste accessible afin de consulter l'historique d'un client archivé.
+        if self.action != "retrieve":
+            queryset = queryset.filter(actif=True)
+        return queryset
+
+    def perform_destroy(self, instance):
+        # L'endpoint DELETE archive le client au lieu d'effacer son historique.
+        with transaction.atomic():
+            client = Client.objects.select_for_update().get(
+                pk=instance.pk, commercant=self.request.user, actif=True
+            )
+            client.actif = False
+            client.save(update_fields=["actif"])
 
 
 @extend_schema_view(
-    list=extend_schema(tags=["Ventes"], summary="Lister les ventes", parameters=[OpenApiParameter("periode", str, OpenApiParameter.QUERY, enum=["jour", "semaine", "mois"], description="Période de l'historique")], responses={200: VenteSerializer(many=True), 401: EXEMPLE_NON_AUTORISE}, examples=[OpenApiExample("Historique", value=[EXEMPLE_VENTE.value], response_only=True)]),
+    list=extend_schema(tags=["Ventes"], summary="Lister les ventes", parameters=[OpenApiParameter("periode", str, OpenApiParameter.QUERY, enum=["jour", "semaine", "mois"], description="Période de l'historique")], responses={200: _schema_liste_paginee("VentesPaginees", VenteSerializer), 401: EXEMPLE_NON_AUTORISE}),
     create=extend_schema(tags=["Ventes"], summary="Enregistrer une vente et déduire le stock", responses={201: VenteSerializer, 400: EXEMPLE_ERREUR, 403: EXEMPLE_NON_AUTORISE}, examples=[OpenApiExample("Nouvelle vente", value={"produit": 1, "client": 1, "quantite": 2}, request_only=True), OpenApiExample("Vente créée", value={"id": 42, "produit": 1, "client": 1, "quantite": 2, "prix_unitaire": "1000.00", "total": "2000.00", "date": "2026-09-28T12:00:00Z"}, response_only=True)]),
     retrieve=extend_schema(tags=["Ventes"], summary="Consulter une vente", responses={200: VenteSerializer, 401: EXEMPLE_NON_AUTORISE, 404: EXEMPLE_ERREUR}),
 )
-class VenteViewSet(mixins.CreateModelMixin, mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.GenericViewSet):
+class VenteViewSet(CreationIdempotenteMixin, mixins.CreateModelMixin, mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.GenericViewSet):
+    operation_idempotente = "vente"
+    throttle_scope = "vente"
     serializer_class = VenteSerializer
+    queryset = Vente.objects.none()
+    lookup_value_regex = r"\d+"
     permission_classes = [EstCommercantAuthentifie, AbonnementAutoriseEcriture, EstProprietaireObjet]
 
     def get_queryset(self):
@@ -354,11 +502,15 @@ class VenteViewSet(mixins.CreateModelMixin, mixins.ListModelMixin, mixins.Retrie
 
 
 @extend_schema_view(
-    list=extend_schema(tags=["Clients"], summary="Lister les dettes", responses={200: DetteSerializer(many=True), 401: EXEMPLE_NON_AUTORISE}),
+    list=extend_schema(tags=["Clients"], summary="Lister les dettes", responses={200: _schema_liste_paginee("DettesPaginees", DetteSerializer), 401: EXEMPLE_NON_AUTORISE}),
     create=extend_schema(tags=["Clients"], summary="Ajouter une dette client", responses={201: DetteSerializer, 400: EXEMPLE_ERREUR, 401: EXEMPLE_NON_AUTORISE, 403: EXEMPLE_NON_AUTORISE}, examples=[OpenApiExample("Nouvelle dette", value={"client": 1, "montant": "5000.00", "note": "Achats à crédit"}, request_only=True), OpenApiExample("Dette créée", value={"id": 5, "client": 1, "montant": "5000.00", "note": "Achats à crédit", "date": "2026-09-28T12:00:00Z"}, response_only=True)]),
 )
-class DetteViewSet(mixins.CreateModelMixin, mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.GenericViewSet):
+class DetteViewSet(CreationIdempotenteMixin, mixins.CreateModelMixin, mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.GenericViewSet):
+    operation_idempotente = "dette"
+    throttle_scope = "dette"
     serializer_class = DetteSerializer
+    queryset = Dette.objects.none()
+    lookup_value_regex = r"\d+"
     permission_classes = [EstCommercantAuthentifie, AbonnementAutoriseEcriture]
 
     def get_serializer_class(self):
@@ -367,7 +519,15 @@ class DetteViewSet(mixins.CreateModelMixin, mixins.ListModelMixin, mixins.Retrie
         return DetteSerializer
 
     def perform_create(self, serializer):
-        serializer.save(commercant=self.request.user)
+        client_id = serializer.validated_data["client"].pk
+        with transaction.atomic():
+            try:
+                client = Client.objects.select_for_update().get(
+                    pk=client_id, commercant=self.request.user, actif=True
+                )
+            except Client.DoesNotExist as erreur:
+                raise serializers.ValidationError({"client": "Ce client est archivé ou introuvable."}) from erreur
+            serializer.save(commercant=self.request.user, client=client)
 
     def get_queryset(self):
         queryset = Dette.objects.filter(commercant=self.request.user).select_related("client", "commercant")
@@ -385,12 +545,27 @@ class DetteViewSet(mixins.CreateModelMixin, mixins.ListModelMixin, mixins.Retrie
     def corriger(self, request, pk=None):
         """Ajuste le montant avec une raison et une trace historique permanente."""
         with transaction.atomic():
-            dette = self.get_object()
+            dette_initiale = self.get_object()
+            try:
+                client = Client.objects.select_for_update().get(
+                    pk=dette_initiale.client_id, commercant=request.user, actif=True
+                )
+            except Client.DoesNotExist as erreur:
+                raise serializers.ValidationError({"client": "Ce client est archivé ou introuvable."}) from erreur
+            dette = Dette.objects.select_for_update().get(
+                pk=dette_initiale.pk, commercant=request.user, client=client
+            )
             serializer = self.get_serializer(data=request.data)
             serializer.is_valid(raise_exception=True)
             nouveau_montant = serializer.validated_data["nouveau_montant"]
             if nouveau_montant == dette.montant:
                 raise serializers.ValidationError({"nouveau_montant": "Le nouveau montant doit être différent."})
+            total_dettes = Dette.objects.filter(client=client).aggregate(total=Sum("montant"))["total"] or Decimal("0")
+            total_paiements = Paiement.objects.filter(client=client).aggregate(total=Sum("montant"))["total"] or Decimal("0")
+            if total_dettes - dette.montant + nouveau_montant < total_paiements:
+                raise serializers.ValidationError({
+                    "nouveau_montant": "Cette correction rendrait le solde global du client négatif."
+                })
             CorrectionDette.objects.create(
                 commercant=request.user,
                 dette=dette,
@@ -476,17 +651,17 @@ def verifier_document(request, code):
     responses={200: OpenApiResponse(response=OpenApiTypes.BINARY, description="Reçu PDF certifié"), 404: EXEMPLE_ERREUR, 429: EXEMPLE_NON_AUTORISE},
 )
 @api_view(["GET"])
-@permission_classes([AllowAny])
+@permission_classes([EstCommercantAuthentifie])
 @throttle_classes([ThrottleVerificationDocument])
 def document_verification_pdf(request, code):
-    """Affiche le reçu complet au porteur du code QR imprévisible."""
+    """Réserve le reçu financier complet au commerçant authentifié propriétaire."""
     try:
         code_uuid = uuid.UUID(str(code))
     except (ValueError, TypeError, AttributeError):
         raise Http404
 
     dette = Dette.objects.select_related("commercant", "client").filter(
-        code_verification=code_uuid, date_generation__isnull=False,
+        code_verification=code_uuid, date_generation__isnull=False, commercant=request.user,
     ).first()
     if dette is not None:
         pdf = _pdf_recu_dette(dette)
@@ -496,6 +671,7 @@ def document_verification_pdf(request, code):
             code_verification=code_uuid,
             statut=DemandePaiementManuel.Statut.VALIDEE,
             date_generation__isnull=False,
+            commercant=request.user,
         ).first()
         if demande is None:
             raise Http404
@@ -513,15 +689,33 @@ def document_verification_pdf(request, code):
     list=extend_schema(tags=["Clients"], summary="Lister les paiements de dettes", responses={200: PaiementSerializer(many=True), 401: EXEMPLE_NON_AUTORISE}),
     create=extend_schema(tags=["Clients"], summary="Enregistrer un paiement client", responses={201: PaiementSerializer, 400: EXEMPLE_ERREUR, 401: EXEMPLE_NON_AUTORISE, 403: EXEMPLE_NON_AUTORISE}, examples=[OpenApiExample("Nouveau paiement", value={"client": 1, "montant": "2000.00"}, request_only=True), OpenApiExample("Paiement enregistré", value={"id": 3, "client": 1, "montant": "2000.00", "date": "2026-09-28T12:00:00Z"}, response_only=True)]),
 )
-class PaiementViewSet(mixins.CreateModelMixin, mixins.ListModelMixin, viewsets.GenericViewSet):
+class PaiementViewSet(CreationIdempotenteMixin, mixins.CreateModelMixin, mixins.ListModelMixin, viewsets.GenericViewSet):
+    operation_idempotente = "paiement"
+    throttle_scope = "paiement"
     serializer_class = PaiementSerializer
+    queryset = Paiement.objects.none()
+    lookup_value_regex = r"\d+"
     permission_classes = [EstCommercantAuthentifie, AbonnementAutoriseEcriture]
 
     def get_queryset(self):
         return Paiement.objects.filter(commercant=self.request.user).select_related("client")
 
     def perform_create(self, serializer):
-        serializer.save(commercant=self.request.user)
+        client_id = serializer.validated_data["client"].pk
+        with transaction.atomic():
+            try:
+                client = Client.objects.select_for_update().get(
+                    pk=client_id, commercant=self.request.user, actif=True
+                )
+            except Client.DoesNotExist as erreur:
+                raise serializers.ValidationError({"client": "Ce client est archivé ou introuvable."}) from erreur
+            montant = serializer.validated_data["montant"]
+            # Le verrou sur le client sérialise dettes, corrections et paiements.
+            if montant > client.solde:
+                raise serializers.ValidationError({
+                    "montant": "Le paiement dépasse le solde dû par ce client."
+                })
+            serializer.save(commercant=self.request.user, client=client)
 
 
 @extend_schema(tags=["Tableau de bord"], summary="Afficher les indicateurs du commerçant", responses={200: OpenApiTypes.OBJECT, 401: EXEMPLE_NON_AUTORISE}, examples=[OpenApiExample("Indicateurs", value={"ventes_jour": "25000.00", "ventes_semaine": "85000.00", "ventes_mois": "260000.00", "produits_en_rupture": [], "total_dettes_en_cours": "12000.00"}, response_only=True)])
@@ -541,9 +735,19 @@ def dashboard(request):
             total=Coalesce(Sum("total"), 0, output_field=champ_montant)
         )["total"]
 
+    ventes_journalieres = ventes.filter(date__gte=debut_semaine).annotate(
+        jour_local=TruncDate("date", tzinfo=timezone.get_current_timezone()),
+    ).values("jour_local").annotate(total=Sum("total")).order_by("jour_local")
+    par_date = {ligne["jour_local"]: ligne["total"] for ligne in ventes_journalieres}
+    ventes_semaine_jour = [
+        {"jour_semaine": index, "total": par_date.get((debut_semaine + timedelta(days=index)).date(), Decimal("0"))}
+        for index in range(7)
+    ]
+
     produits_alerte = Produit.objects.filter(
-        commercant=commercant, quantite_stock__lte=F("seuil_alerte")
-    ).values("id", "nom", "quantite_stock", "seuil_alerte")
+        commercant=commercant, actif=True, quantite_stock__lte=F("seuil_alerte")
+    ).values("id", "nom", "quantite_stock", "seuil_alerte").order_by("quantite_stock", "nom")
+    produits_alerte_total = produits_alerte.count()
     dettes = Dette.objects.filter(commercant=commercant).aggregate(
         total=Coalesce(Sum("montant"), 0, output_field=champ_montant)
     )["total"]
@@ -554,7 +758,11 @@ def dashboard(request):
         "ventes_jour": total_ventes(debut_jour),
         "ventes_semaine": total_ventes(debut_semaine),
         "ventes_mois": total_ventes(debut_mois),
-        "produits_en_rupture": list(produits_alerte),
+        "ventes_semaine_jour": ventes_semaine_jour,
+        # Le dashboard conserve une réponse bornée ; la page Produits permet
+        # de consulter toutes les ruptures avec pagination serveur.
+        "produits_en_rupture": list(produits_alerte[:100]),
+        "produits_en_rupture_total": produits_alerte_total,
         "total_dettes_en_cours": dettes - paiements,
     })
 
@@ -581,14 +789,16 @@ def abonnement_actuel(request):
     return Response(donnees)
 
 
-@extend_schema(tags=["Abonnement"], summary="Lister les formules disponibles", responses={200: PlanSerializer(many=True), 401: EXEMPLE_NON_AUTORISE}, examples=[OpenApiExample("Formule mensuelle", value=[{"id": 1, "nom": "Mensuel", "prix": "2500.00", "duree_jours": 30}], response_only=True)])
+@extend_schema(tags=["Abonnement"], summary="Lister les formules disponibles", responses={200: _schema_liste_paginee("PlansPaginees", PlanSerializer)})
 @api_view(["GET"])
-@permission_classes([EstCommercantAuthentifie])
+@permission_classes([AllowAny])
 def plans(request):
+    """Publie les tarifs actifs afin que le site vitrine lise le prix du backend."""
     offres = Plan.objects.filter(actif=True, prix__gt=0)
-    return Response(PlanSerializer(offres, many=True).data)
+    return _reponse_liste_paginee(request, offres, PlanSerializer)
 
 
+@extend_schema(tags=["Abonnement"], summary="Consulter l'offre d'essai publique", responses={200: OffreEssaiReponseSerializer})
 @api_view(["GET"])
 @permission_classes([AllowAny])
 def offre_essai(request):
@@ -597,21 +807,30 @@ def offre_essai(request):
     return Response({"actif": configuration.actif, "duree_jours": configuration.duree_jours if configuration.actif else 0})
 
 
-@extend_schema(tags=["Abonnement"], summary="Consulter l'historique des paiements d'abonnement", responses={200: PaiementAbonnementHistoriqueSerializer(many=True), 401: EXEMPLE_NON_AUTORISE})
+@extend_schema(tags=["Abonnement"], summary="Consulter l'historique des paiements d'abonnement", responses={200: _schema_liste_paginee("HistoriqueAbonnementsPagine", PaiementAbonnementHistoriqueSerializer), 401: EXEMPLE_NON_AUTORISE})
 @api_view(["GET"])
 @permission_classes([EstCommercantAuthentifie])
 def historique_abonnement(request):
     paiements = PaiementAbonnementHistorique.objects.filter(commercant=request.user).select_related("plan")
-    return Response(PaiementAbonnementHistoriqueSerializer(paiements, many=True).data)
+    return _reponse_liste_paginee(request, paiements, PaiementAbonnementHistoriqueSerializer)
 
 
+@extend_schema(
+    methods=["GET"], tags=["Abonnement"], summary="Lister les demandes de paiement du commerçant connecté",
+    responses={200: _schema_liste_paginee("DemandesPaiementPaginees", DemandePaiementManuelSerializer), 401: EXEMPLE_NON_AUTORISE},
+)
+@extend_schema(
+    methods=["POST"], tags=["Abonnement"], summary="Soumettre une demande de paiement manuel",
+    request=DemandePaiementManuelSerializer,
+    responses={201: DemandePaiementManuelSerializer, 400: EXEMPLE_ERREUR, 409: EXEMPLE_ERREUR, 503: EXEMPLE_ERREUR},
+)
 @api_view(["GET", "POST"])
 @permission_classes([EstCommercantAuthentifie])
 def demandes_paiement_abonnement(request):
     """Crée une demande manuelle ou renvoie uniquement l'historique du compte courant."""
     if request.method == "GET":
         demandes = DemandePaiementManuel.objects.filter(commercant=request.user).select_related("plan")
-        return Response(DemandePaiementManuelSerializer(demandes, many=True).data)
+        return _reponse_liste_paginee(request, demandes, DemandePaiementManuelSerializer)
     if not any([settings.NUMERO_MTN, settings.NUMERO_MOOV, settings.NUMERO_CELTIIS]):
         return Response({"detail": "Aucun opérateur Mobile Money n'est configuré."}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
     if DemandePaiementManuel.objects.filter(commercant=request.user, statut=DemandePaiementManuel.Statut.EN_ATTENTE).exists():
@@ -635,6 +854,10 @@ def demandes_paiement_abonnement(request):
     return Response(DemandePaiementManuelSerializer(demande).data, status=status.HTTP_201_CREATED)
 
 
+@extend_schema(
+    tags=["Abonnement"], summary="Télécharger la preuve d'une demande de paiement",
+    responses={200: OpenApiResponse(response=OpenApiTypes.BINARY, description="Fichier de preuve du commerçant ou accessible au personnel autorisé."), 404: EXEMPLE_ERREUR},
+)
 @api_view(["GET"])
 @permission_classes([EstCommercantAuthentifie])
 def preuve_demande_abonnement(request, pk):
@@ -653,6 +876,10 @@ def preuve_demande_abonnement(request, pk):
     return FileResponse(fichier, content_type="application/octet-stream", as_attachment=True, filename="preuve-paiement")
 
 
+@extend_schema(
+    tags=["Abonnement"], summary="Télécharger le reçu PDF d'un paiement validé",
+    responses={200: OpenApiResponse(response=OpenApiTypes.BINARY, description="Reçu PDF certifié."), 404: EXEMPLE_ERREUR},
+)
 @api_view(["GET"])
 @permission_classes([EstCommercantAuthentifie])
 def recu_abonnement_manuel(request, pk):
@@ -691,6 +918,10 @@ class VueJournalAudit(generics.ListAPIView):
         return queryset
 
 
+@extend_schema(
+    tags=["Système"], summary="Vérifier la disponibilité de l'API et de la base",
+    responses={200: SanteReponseSerializer, 503: SanteReponseSerializer},
+)
 @api_view(["GET"])
 @permission_classes([AllowAny])
 def sante(request):
@@ -707,6 +938,10 @@ def sante(request):
     return Response({"statut": "ok", "base_de_donnees": "disponible"})
 
 
+@extend_schema(
+    tags=["Compte"], summary="Télécharger une copie PDF des données du compte",
+    responses={200: OpenApiResponse(response=OpenApiTypes.BINARY, description="Export PDF personnel."), 401: EXEMPLE_NON_AUTORISE},
+)
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def export_compte(request):
@@ -718,6 +953,11 @@ def export_compte(request):
     return reponse
 
 
+@extend_schema(
+    tags=["Compte"], summary="Supprimer le compte après confirmation du mot de passe",
+    request=ConfirmationSuppressionSerializer,
+    responses={200: ReponseDetailSerializer, 400: EXEMPLE_ERREUR, 401: EXEMPLE_NON_AUTORISE},
+)
 @api_view(["DELETE"])
 @permission_classes([IsAuthenticated])
 def supprimer_compte(request):
@@ -740,7 +980,10 @@ def supprimer_compte(request):
         AccessFailureLog.objects.filter(username__in=identifiants).delete()
         AccessLog.objects.filter(username__in=identifiants).delete()
         JournalAudit.objects.filter(commercant=utilisateur).delete()
-        # Le FK Vente.produit est PROTECT ; ses ventes sont effacées avant le catalogue.
+        # Le FK Vente.produit est PROTECT. Les dettes et paiements précèdent
+        # aussi la suppression du commerçant depuis le passage de Client en PROTECT.
         Vente.objects.filter(commercant=utilisateur).delete()
+        Dette.objects.filter(commercant=utilisateur).delete()
+        Paiement.objects.filter(commercant=utilisateur).delete()
         utilisateur.delete()
     return Response(status=status.HTTP_204_NO_CONTENT)

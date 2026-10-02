@@ -7,6 +7,8 @@ import Card from "../composants/Card";
 import Icon from "../composants/Icon";
 import { Chargement, Erreur } from "../composants/Commun";
 import { useToast } from "../composants/ToastProvider";
+import Pagination from "../composants/Pagination";
+import { extraireListe } from "../utils";
 
 const fcfa = (montant) => `${Number(montant || 0).toLocaleString("fr-FR")} FCFA`;
 
@@ -22,23 +24,32 @@ export default function Abonnement() {
   const [chargement, setChargement] = useState(true);
   const [planEnCours, setPlanEnCours] = useState(null);
   const [erreur, setErreur] = useState("");
+  const [planPage, setPlanPage] = useState(1);
+  const [transactionPage, setTransactionPage] = useState(1);
+  const [demandePage, setDemandePage] = useState(1);
+  const [nombrePlans, setNombrePlans] = useState(0);
+  const [nombreTransactions, setNombreTransactions] = useState(0);
+  const [nombreDemandes, setNombreDemandes] = useState(0);
   const notifier = useToast();
   const demandeEnAttente = demandes.some((demande) => demande.statut === "en_attente");
 
   const charger = useCallback(async () => {
     const [etat, offres, historique] = await Promise.all([
       api.get("/api/abonnement/"),
-      api.get("/api/plans/"),
-      api.get("/api/abonnement/transactions/"),
+      api.get("/api/plans/", { params: { page: planPage } }),
+      api.get("/api/abonnement/transactions/", { params: { page: transactionPage } }),
     ]);
     const demandesManuelles = etat.data.mode_paiement === "manuel"
-      ? await api.get("/api/abonnement/demandes/")
-      : { data: [] };
+      ? await api.get("/api/abonnement/demandes/", { params: { page: demandePage } })
+      : { data: { count: 0, results: [] } };
     setAbonnement(etat.data);
-    setPlans(offres.data);
-    setTransactions(historique.data);
-    setDemandes(demandesManuelles.data);
-  }, []);
+    setPlans(extraireListe(offres.data));
+    setNombrePlans(offres.data.count ?? extraireListe(offres.data).length);
+    setTransactions(extraireListe(historique.data));
+    setNombreTransactions(historique.data.count ?? extraireListe(historique.data).length);
+    setDemandes(extraireListe(demandesManuelles.data));
+    setNombreDemandes(demandesManuelles.data.count ?? extraireListe(demandesManuelles.data).length);
+  }, [planPage, transactionPage, demandePage]);
 
   useEffect(() => {
     charger().catch((e) => setErreur(messageErreur(e))).finally(() => setChargement(false));
@@ -123,6 +134,7 @@ export default function Abonnement() {
               <><Icon name="wallet"/>Choisir cette formule</>
             </Button>
           </Card>)}</div>}
+        <Pagination page={planPage} count={nombrePlans} onChange={setPlanPage}/>
       </section>
 
       {planChoisi && <Card>
@@ -171,6 +183,7 @@ export default function Abonnement() {
           </div>
           <div className="flex items-center gap-3"><Badge tone={demande.statut === "validee" ? "green" : demande.statut === "rejetee" ? "red" : "orange"}>{demande.statut === "validee" ? "Validée" : demande.statut === "rejetee" ? "Rejetée" : "En attente"}</Badge>{demande.statut === "validee" && <Button onClick={() => telechargerRecu(demande)}>Télécharger le reçu (PDF)</Button>}</div>
         </Card>)}
+        <Pagination page={demandePage} count={nombreDemandes} onChange={setDemandePage}/>
       </section>}
 
       <section className="page-stack">
@@ -181,6 +194,7 @@ export default function Abonnement() {
             <strong>{fcfa(transaction.montant)}</strong>
             <Badge tone={transaction.statut === "reussi" ? "green" : transaction.statut === "echoue" ? "red" : "orange"}>{transaction.statut === "reussi" ? "Réussi" : transaction.statut === "echoue" ? "Échoué" : "En attente"}</Badge>
           </Card>)}</div>}
+        <Pagination page={transactionPage} count={nombreTransactions} onChange={setTransactionPage}/>
       </section>
       <Link className="btn-ghost w-fit" to="/tableau-de-bord"><Icon name="arrow"/>Retour au tableau de bord</Link>
     </div>

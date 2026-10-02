@@ -85,6 +85,23 @@ class ProfilSousAdmin(models.Model):
         return f"Sous-admin {self.utilisateur.email}"
 
 
+class SessionJWT(models.Model):
+    """Session serveur permettant de révoquer immédiatement access et refresh."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    utilisateur = models.ForeignKey(Commercant, on_delete=models.CASCADE, related_name="sessions_jwt")
+    jti_refresh = models.CharField(max_length=255, unique=True)
+    cree_le = models.DateTimeField(auto_now_add=True)
+    expire_le = models.DateTimeField()
+    revoque_le = models.DateTimeField(null=True, blank=True, db_index=True)
+
+    class Meta:
+        indexes = [models.Index(fields=["utilisateur", "revoque_le"], name="commerce_session_user_rev_idx")]
+
+    def __str__(self):
+        return f"Session {self.id} — {self.utilisateur.email}"
+
+
 class JournalAudit(models.Model):
     """Trace immuable des actions métier d'un commerçant."""
 
@@ -136,6 +153,8 @@ class Produit(models.Model):
     quantite_stock = models.PositiveIntegerField(default=0)
     seuil_alerte = models.PositiveIntegerField(default=5)
     date_creation = models.DateTimeField(auto_now_add=True)
+    # L'archivage masque le produit sans casser les références des ventes.
+    actif = models.BooleanField(default=True, db_index=True)
 
     class Meta:
         ordering = ["nom"]
@@ -149,12 +168,17 @@ class Client(models.Model):
     commercant = models.ForeignKey(Commercant, on_delete=models.CASCADE, related_name="clients")
     nom = models.CharField(max_length=120)
     telephone = models.CharField(max_length=20, blank=True)
+    # Une archive conserve les dettes, paiements et ventes historiques du client.
+    actif = models.BooleanField(default=True, db_index=True)
 
     class Meta:
         ordering = ["nom"]
 
     @property
     def solde(self):
+        # Les listes annotent ces deux totaux afin d'éviter deux requêtes par client.
+        if hasattr(self, "_total_dettes_annote") and hasattr(self, "_total_paiements_annote"):
+            return self._total_dettes_annote - self._total_paiements_annote
         montant_decimal = models.DecimalField(max_digits=14, decimal_places=2)
         dettes = self.dettes.aggregate(
             total=Coalesce(Sum("montant"), 0, output_field=montant_decimal)
@@ -166,6 +190,28 @@ class Client(models.Model):
 
     def __str__(self):
         return self.nom
+
+
+class RequeteIdempotente(models.Model):
+    """Conserve la réponse d'une opération rejouée avec la même clé."""
+
+    commercant = models.ForeignKey(
+        Commercant, on_delete=models.CASCADE, related_name="requetes_idempotentes"
+    )
+    operation = models.CharField(max_length=20)
+    cle = models.CharField(max_length=100)
+    empreinte = models.CharField(max_length=64)
+    code_http = models.PositiveSmallIntegerField(default=201)
+    reponse = models.JSONField(default=dict)
+    date_creation = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["commercant", "operation", "cle"],
+                name="unique_requete_idempotente_commercant_operation",
+            )
+        ]
 
 
 class Vente(models.Model):
@@ -186,7 +232,7 @@ class Vente(models.Model):
 
 class Dette(models.Model):
     commercant = models.ForeignKey(Commercant, on_delete=models.CASCADE, related_name="dettes")
-    client = models.ForeignKey(Client, on_delete=models.CASCADE, related_name="dettes")
+    client = models.ForeignKey(Client, on_delete=models.PROTECT, related_name="dettes")
     montant = models.DecimalField(max_digits=14, decimal_places=2, validators=[MinValueValidator(Decimal("0.01"))])
     note = models.CharField(max_length=250, blank=True)
     date = models.DateTimeField(auto_now_add=True)
@@ -217,7 +263,7 @@ class CorrectionDette(models.Model):
 
 class Paiement(models.Model):
     commercant = models.ForeignKey(Commercant, on_delete=models.CASCADE, related_name="paiements")
-    client = models.ForeignKey(Client, on_delete=models.CASCADE, related_name="paiements")
+    client = models.ForeignKey(Client, on_delete=models.PROTECT, related_name="paiements")
     montant = models.DecimalField(max_digits=14, decimal_places=2, validators=[MinValueValidator(Decimal("0.01"))])
     date = models.DateTimeField(auto_now_add=True)
 
