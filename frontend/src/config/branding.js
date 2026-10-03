@@ -1,5 +1,5 @@
 // Modifiez cette configuration pour adapter le nom, les coordonnées et les liens publics.
-const whatsappNobi = "https://wa.me/2290121212121";
+const whatsappNobi = "https://wa.me/2290157179683";
 
 export const branding = {
   appName: "Nobi",
@@ -18,8 +18,10 @@ export const branding = {
   },
   contact: {
     email: "cephacemacevo@gmail.com",
-    telephone: "+2290121212121",
+    telephone: "+2290157179683",
     whatsapp: whatsappNobi,
+    address: "Cotonou, Bénin",
+    facebook: "",
   },
   // Laissez vide tant que l'adresse officielle du réseau n'est pas connue.
   socials: {
