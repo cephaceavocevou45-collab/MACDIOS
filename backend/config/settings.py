@@ -2,6 +2,7 @@
 
 from datetime import timedelta
 from pathlib import Path
+import warnings
 
 from decouple import Csv, config
 import dj_database_url
@@ -98,8 +99,6 @@ DATABASES = {
 # Le cache local sert au développement. En production, REDIS_URL permet de
 # partager les compteurs DRF/Axes entre plusieurs processus ou instances.
 REDIS_URL = config("REDIS_URL", default="").strip()
-if EST_PRODUCTION and not REDIS_URL:
-    raise ImproperlyConfigured("REDIS_URL est obligatoire en production pour partager les compteurs de sécurité.")
 if REDIS_URL:
     if not REDIS_URL.startswith(("redis://", "rediss://", "unix://")):
         raise ImproperlyConfigured("REDIS_URL doit utiliser redis://, rediss:// ou unix://.")
@@ -116,6 +115,24 @@ if REDIS_URL:
             },
         }
     }
+elif EST_PRODUCTION:
+    # Le cache PostgreSQL reste partagé entre les workers lorsque Redis n'est
+    # pas encore provisionné. Il augmente toutefois la charge de la base.
+    CACHES = {
+        "default": {
+            "BACKEND": "django.core.cache.backends.db.DatabaseCache",
+            "LOCATION": "nobi_cache",
+            "TIMEOUT": 300,
+            "KEY_PREFIX": "nobi",
+            "OPTIONS": {"MAX_ENTRIES": 10000, "CULL_FREQUENCY": 3},
+        }
+    }
+    warnings.warn(
+        "REDIS_URL absent : les compteurs partagés utilisent la table de cache PostgreSQL. "
+        "Redis n'est pas configuré et cette solution augmente la charge de la base.",
+        RuntimeWarning,
+        stacklevel=1,
+    )
 else:
     CACHES = {
         "default": {
@@ -130,9 +147,13 @@ BACKUP_S3_BUCKET = config("BACKUP_S3_BUCKET", default="").strip()
 BACKUP_S3_PREFIX = config("BACKUP_S3_PREFIX", default="nobi/database").strip("/")
 AWS_REGION = config("AWS_REGION", default="")
 AWS_ENDPOINT_URL = config("AWS_ENDPOINT_URL", default="")
-if EST_PRODUCTION and (not BACKUP_ENCRYPTION_KEY or not BACKUP_S3_BUCKET):
-    raise ImproperlyConfigured(
-        "BACKUP_ENCRYPTION_KEY et BACKUP_S3_BUCKET sont obligatoires en production."
+SAUVEGARDE_S3_ACTIVE = bool(BACKUP_ENCRYPTION_KEY and BACKUP_S3_BUCKET)
+if EST_PRODUCTION and not SAUVEGARDE_S3_ACTIVE:
+    warnings.warn(
+        "Sauvegardes S3 désactivées : BACKUP_ENCRYPTION_KEY et BACKUP_S3_BUCKET "
+        "doivent être configurées ensemble. Aucune sauvegarde distante n'est assurée.",
+        RuntimeWarning,
+        stacklevel=1,
     )
 
 AUTH_USER_MODEL = "commerce.Commercant"

@@ -7,6 +7,7 @@ import subprocess
 import sys
 
 from django.core.management import call_command
+from django.core.cache.backends.db import DatabaseCache
 from django.test import TestCase
 from unittest.mock import patch
 
@@ -23,26 +24,26 @@ class QualiteProjetTests(TestCase):
             "ALLOWED_HOSTS": "api.example.test",
             "CORS_ALLOWED_ORIGINS": "https://app.example.test",
             "DATABASE_URL": "sqlite:///:memory:",
-            "REDIS_URL": "redis://localhost:6379/0",
-            # Le garde-fou de démarrage en production vérifie aussi la destination
-            # et le chiffrement des sauvegardes avant d'atteindre les scénarios testés.
-            "BACKUP_ENCRYPTION_KEY": "cle-de-chiffrement-de-test-sans-valeur-reelle",
-            "BACKUP_S3_BUCKET": "bucket-test-non-utilise",
+            "REDIS_URL": "",
+            "BACKUP_ENCRYPTION_KEY": "",
+            "BACKUP_S3_BUCKET": "",
             "SENTRY_DSN": "",
         })
         racine_backend = Path(__file__).resolve().parents[1]
         scenarios = (
-            ({"DEBUG": "", "SECRET_KEY": "cle-test"}, "DEBUG doit être explicitement"),
-            ({"DEBUG": "True", "SECRET_KEY": "cle-test"}, "DEBUG=True est interdit"),
-            ({"DEBUG": "False", "SECRET_KEY": ""}, "SECRET_KEY doit être explicitement"),
-            ({"DEBUG": "False", "SECRET_KEY": "cle-test-securisee-pour-le-test", "REDIS_URL": ""}, "REDIS_URL est obligatoire"),
-            ({"DEBUG": "False", "SECRET_KEY": "cle-test-securisee-pour-le-test"}, None),
+            ({"ENVIRONMENT": ""}, "ENVIRONMENT doit être explicitement défini", None),
+            ({"DEBUG": "", "SECRET_KEY": "cle-test"}, "DEBUG doit être explicitement", None),
+            ({"DEBUG": "True", "SECRET_KEY": "cle-test"}, "DEBUG=True est interdit", None),
+            ({"DEBUG": "False", "SECRET_KEY": ""}, "SECRET_KEY doit être explicitement", None),
+            ({"DEBUG": "False", "SECRET_KEY": "cle-test-securisee-pour-le-test", "REDIS_URL": "invalid"}, "REDIS_URL doit utiliser", None),
+            ({"DEBUG": "False", "SECRET_KEY": "cle-test-securisee-pour-le-test"}, None, "django.core.cache.backends.db.DatabaseCache"),
+            ({"DEBUG": "False", "SECRET_KEY": "cle-test-securisee-pour-le-test", "REDIS_URL": "redis://localhost:6379/0"}, None, "django.core.cache.backends.redis.RedisCache"),
         )
-        for valeurs, message_attendu in scenarios:
+        for valeurs, message_attendu, cache_attendu in scenarios:
             with self.subTest(valeurs=tuple(valeurs)):
                 environnement = environnement_base | valeurs
                 resultat = subprocess.run(
-                    [sys.executable, "-c", "import config.settings"],
+                    [sys.executable, "-c", "import config.settings as s; print(s.CACHES['default']['BACKEND']); print(s.SAUVEGARDE_S3_ACTIVE)"],
                     cwd=racine_backend,
                     env=environnement,
                     capture_output=True,
@@ -52,9 +53,22 @@ class QualiteProjetTests(TestCase):
                 sortie = resultat.stdout + resultat.stderr
                 if message_attendu is None:
                     self.assertEqual(resultat.returncode, 0, sortie)
+                    self.assertIn(cache_attendu, sortie)
+                    if not valeurs.get("REDIS_URL"):
+                        self.assertIn("False", sortie)
                 else:
                     self.assertNotEqual(resultat.returncode, 0, sortie)
                     self.assertIn(message_attendu, sortie)
+
+    def test_cache_postgresql_fallback_partage_les_valeurs_entre_instances(self):
+        premiere_instance = DatabaseCache("nobi_cache", {"TIMEOUT": 60})
+        seconde_instance = DatabaseCache("nobi_cache", {"TIMEOUT": 60})
+        cle = "test-cache-postgresql-partage"
+        try:
+            premiere_instance.set(cle, "valeur partagée", timeout=30)
+            self.assertEqual(seconde_instance.get(cle), "valeur partagée")
+        finally:
+            premiere_instance.delete(cle)
 
     def test_schema_openapi_documente_les_routes_principales(self):
         reponse = self.client.get("/api/schema/?format=json")

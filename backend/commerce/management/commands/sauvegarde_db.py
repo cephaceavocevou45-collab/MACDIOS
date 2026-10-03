@@ -18,10 +18,13 @@ class Command(BaseCommand):
         parser.add_argument("--sortie", type=Path, help="Copie locale chiffrée facultative.")
 
     def handle(self, *args, **options):
+        if settings.EST_PRODUCTION and not settings.SAUVEGARDE_S3_ACTIVE:
+            raise CommandError(
+                "Sauvegarde de production désactivée : configurez BACKUP_ENCRYPTION_KEY et "
+                "BACKUP_S3_BUCKET ensemble. Aucun fichier de sauvegarde n'a été créé."
+            )
         if not settings.BACKUP_ENCRYPTION_KEY:
             raise CommandError("BACKUP_ENCRYPTION_KEY n'est pas configurée.")
-        if settings.EST_PRODUCTION and not settings.BACKUP_S3_BUCKET:
-            raise CommandError("BACKUP_S3_BUCKET est obligatoire en production.")
         try:
             chiffreur = Fernet(settings.BACKUP_ENCRYPTION_KEY.encode("ascii"))
         except (ValueError, UnicodeEncodeError) as erreur:
@@ -56,9 +59,13 @@ class Command(BaseCommand):
                 ServerSideEncryption="AES256", Metadata={"sha256": empreinte, "format": "fernet-gzip-json"},
             )
             self.stdout.write(self.style.SUCCESS(f"Copie chiffrée envoyée au stockage externe : {cle}"))
-        elif not destination:
+        elif not destination and not settings.EST_PRODUCTION:
             destination = Path.cwd() / "backups" / nom
             destination.parent.mkdir(parents=True, exist_ok=True)
             destination.write_bytes(chiffre)
             self.stdout.write(self.style.SUCCESS(f"Copie locale chiffrée créée : {destination}"))
+        elif not destination:
+            raise CommandError(
+                "Aucune sauvegarde S3 n'a été créée. Les sauvegardes locales automatiques sont désactivées en production."
+            )
         self.stdout.write(f"Empreinte SHA-256 du fichier chiffré : {empreinte}")

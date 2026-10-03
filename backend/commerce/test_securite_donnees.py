@@ -13,7 +13,7 @@ from unittest.mock import patch
 from axes.models import AccessAttempt, AccessFailureLog, AccessLog
 from django.contrib import admin
 from django.contrib.auth import get_user_model
-from django.core.management import call_command
+from django.core.management import call_command, CommandError
 from django.core.cache import cache
 from django.db import DatabaseError
 from django.test import TestCase, override_settings
@@ -280,6 +280,20 @@ class SecuriteEtDonneesTests(TestCase):
             with override_settings(BACKUP_ENCRYPTION_KEY=cle, EST_PRODUCTION=False):
                 call_command("restaure_db", fichier, verbosity=0)
             self.assertTrue(Produit.objects.filter(pk=identifiant_produit).exists())
+
+    def test_sauvegarde_production_sans_s3_echoue_sans_creer_de_fichier(self):
+        cle = Fernet.generate_key().decode("ascii")
+        with tempfile.TemporaryDirectory() as dossier:
+            fichier = Path(dossier) / "sauvegarde-production.json.gz.fernet"
+            with override_settings(
+                EST_PRODUCTION=True,
+                SAUVEGARDE_S3_ACTIVE=False,
+                BACKUP_ENCRYPTION_KEY=cle,
+                BACKUP_S3_BUCKET="",
+            ):
+                with self.assertRaisesMessage(CommandError, "Sauvegarde de production désactivée"):
+                    call_command("sauvegarde_db", sortie=fichier, verbosity=0)
+            self.assertFalse(fichier.exists())
 
     def test_inscription_exige_consentement_et_enregistre_sa_date(self):
         sans_consentement = self.api.post("/api/auth/inscription/", {
