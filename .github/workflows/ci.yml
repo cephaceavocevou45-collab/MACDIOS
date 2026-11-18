@@ -114,17 +114,18 @@ jobs:
         with:
           fetch-depth: 1
 
-      - name: Vérifier les secrets de déploiement
+      - name: Vérifier la configuration Railway
         env:
           DEPLOYMENT_MAINTENANCE_TOKEN: ${{ secrets.DEPLOYMENT_MAINTENANCE_TOKEN }}
-          RENDER_DEPLOY_HOOK_URL: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
-          VERCEL_DEPLOY_HOOK_URL: ${{ secrets.VERCEL_DEPLOY_HOOK_URL }}
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          RAILWAY_FRONTEND_URL: ${{ vars.RAILWAY_FRONTEND_URL }}
         run: |
           set -euo pipefail
           test -n "$DEPLOYMENT_MAINTENANCE_TOKEN" || { echo "Secret GitHub manquant : DEPLOYMENT_MAINTENANCE_TOKEN"; exit 1; }
           test "${#DEPLOYMENT_MAINTENANCE_TOKEN}" -ge 32 || { echo "DEPLOYMENT_MAINTENANCE_TOKEN doit contenir au moins 32 caractères."; exit 1; }
-          test -n "$RENDER_DEPLOY_HOOK_URL" || { echo "Secret GitHub manquant : RENDER_DEPLOY_HOOK_URL"; exit 1; }
-          test -n "$VERCEL_DEPLOY_HOOK_URL" || { echo "Secret GitHub manquant : VERCEL_DEPLOY_HOOK_URL"; exit 1; }
+          test -n "$RAILWAY_TOKEN" || { echo "Secret GitHub manquant : RAILWAY_TOKEN"; exit 1; }
+          test -n "$RAILWAY_FRONTEND_URL" || { echo "Variable GitHub manquante : RAILWAY_FRONTEND_URL"; exit 1; }
+          case "$RAILWAY_FRONTEND_URL" in https://*) ;; *) echo "RAILWAY_FRONTEND_URL doit être une URL HTTPS."; exit 1 ;; esac
 
       - name: Refuser un déploiement dépassé par un commit plus récent
         run: |
@@ -139,53 +140,57 @@ jobs:
         id: maintenance
         env:
           DEPLOYMENT_MAINTENANCE_TOKEN: ${{ secrets.DEPLOYMENT_MAINTENANCE_TOKEN }}
-          API_PRODUCTION: https://gestions-commer-ants.onrender.com
+          RAILWAY_FRONTEND_URL: ${{ vars.RAILWAY_FRONTEND_URL }}
         run: |
           set -euo pipefail
           reponse="$(curl --silent --show-error --fail --max-time 30 \
             -H "Authorization: Bearer $DEPLOYMENT_MAINTENANCE_TOKEN" \
             -H "Content-Type: application/json" \
-            -X POST "$API_PRODUCTION/api/deploiement/maintenance/" \
+            -X POST "$RAILWAY_FRONTEND_URL/api/deploiement/maintenance/" \
             --data '{"action":"activer"}')"
           etat_precedent="$(jq -c '.etat_precedent' <<< "$reponse")"
           test "$etat_precedent" != "null"
           echo "etat_precedent=$etat_precedent" >> "$GITHUB_OUTPUT"
 
-      - name: Déployer le commit testé sur Render
+      - name: Installer Railway CLI
+        run: npm install --global @railway/cli
+
+      - name: Préparer le SHA vérifié sur les services Railway
         env:
-          RENDER_DEPLOY_HOOK_URL: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
         run: |
           set -euo pipefail
-          separateur='?'
-          if [[ "$RENDER_DEPLOY_HOOK_URL" == *\?* ]]; then separateur='&'; fi
-          # Render accepte un SHA précis via ref et désactive alors l'auto-déploiement.
-          curl --silent --show-error --fail --max-time 30 --output /dev/null \
-            --request POST "${RENDER_DEPLOY_HOOK_URL}${separateur}ref=${GITHUB_SHA}"
+          railway variable set "APP_RELEASE_SHA=$GITHUB_SHA" --service backend --skip-deploys
+          railway variable set "APP_RELEASE_SHA=$GITHUB_SHA" --service frontend --skip-deploys
 
-      - name: Déclencher la production Vercel
+      - name: Déployer le backend sur Railway
         env:
-          VERCEL_DEPLOY_HOOK_URL: ${{ secrets.VERCEL_DEPLOY_HOOK_URL }}
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
         run: |
           set -euo pipefail
-          # L'URL du hook est un secret : ne pas afficher son contenu dans les logs.
-          curl --silent --show-error --fail --max-time 30 --output /dev/null \
-            --request POST "$VERCEL_DEPLOY_HOOK_URL"
+          railway up --service backend --ci
 
-      - name: Attendre la présence du commit sur les deux plateformes
+      - name: Déployer le frontend sur Railway
         env:
-          API_PRODUCTION: https://gestions-commer-ants.onrender.com
-          FRONTEND_PRODUCTION: https://gestions-commer-ants.vercel.app
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        run: |
+          set -euo pipefail
+          railway up --service frontend --ci
+
+      - name: Attendre la présence du commit sur Railway
+        env:
+          RAILWAY_FRONTEND_URL: ${{ vars.RAILWAY_FRONTEND_URL }}
         run: |
           set -euo pipefail
           backend_ok=false
           frontend_ok=false
           for tentative in $(seq 1 90); do
             if [ "$backend_ok" != true ]; then
-              sha_backend="$(curl --silent --show-error --fail --max-time 20 "$API_PRODUCTION/api/version/" | jq -r '.commit // ""' || true)"
+              sha_backend="$(curl --silent --show-error --fail --max-time 20 "$RAILWAY_FRONTEND_URL/api/version/" | jq -r '.commit // ""' || true)"
               if [ "$sha_backend" = "$GITHUB_SHA" ]; then backend_ok=true; fi
             fi
             if [ "$frontend_ok" != true ]; then
-              sha_frontend="$(curl --silent --show-error --fail --max-time 20 "$FRONTEND_PRODUCTION/version.json" | jq -r '.commit // ""' || true)"
+              sha_frontend="$(curl --silent --show-error --fail --max-time 20 "$RAILWAY_FRONTEND_URL/version.json" | jq -r '.commit // ""' || true)"
               if [ "$sha_frontend" = "$GITHUB_SHA" ]; then frontend_ok=true; fi
             fi
             if [ "$backend_ok" = true ] && [ "$frontend_ok" = true ]; then
@@ -195,23 +200,22 @@ jobs:
             echo "Déploiement en cours (tentative $tentative/90)."
             sleep 20
           done
-          echo "Le commit attendu n'a pas été confirmé sur les deux plateformes. La maintenance reste active pour permettre une vérification manuelle."
+          echo "Le commit attendu n'a pas été confirmé sur les services Railway. La maintenance reste active pour permettre une vérification manuelle."
           exit 1
 
       - name: Vérifier les réponses HTTP de production
         env:
-          API_PRODUCTION: https://gestions-commer-ants.onrender.com
-          FRONTEND_PRODUCTION: https://gestions-commer-ants.vercel.app
+          RAILWAY_FRONTEND_URL: ${{ vars.RAILWAY_FRONTEND_URL }}
         run: |
           set -euo pipefail
-          curl --silent --show-error --fail --retry 5 --retry-delay 10 --max-time 30 "$API_PRODUCTION/api/sante/" >/dev/null
-          curl --silent --show-error --fail --retry 5 --retry-delay 10 --max-time 30 "$FRONTEND_PRODUCTION/" >/dev/null
+          curl --silent --show-error --fail --retry 5 --retry-delay 10 --max-time 30 "$RAILWAY_FRONTEND_URL/api/sante/" >/dev/null
+          curl --silent --show-error --fail --retry 5 --retry-delay 10 --max-time 30 "$RAILWAY_FRONTEND_URL/" >/dev/null
 
       - name: Restaurer l'état de maintenance précédent
         if: success() && steps.maintenance.outputs.etat_precedent != ''
         env:
           DEPLOYMENT_MAINTENANCE_TOKEN: ${{ secrets.DEPLOYMENT_MAINTENANCE_TOKEN }}
-          API_PRODUCTION: https://gestions-commer-ants.onrender.com
+          RAILWAY_FRONTEND_URL: ${{ vars.RAILWAY_FRONTEND_URL }}
           ETAT_PRECEDENT: ${{ steps.maintenance.outputs.etat_precedent }}
         run: |
           set -euo pipefail
@@ -219,5 +223,5 @@ jobs:
             curl --silent --show-error --fail --max-time 30 \
               -H "Authorization: Bearer $DEPLOYMENT_MAINTENANCE_TOKEN" \
               -H "Content-Type: application/json" \
-              -X POST "$API_PRODUCTION/api/deploiement/maintenance/" \
+              -X POST "$RAILWAY_FRONTEND_URL/api/deploiement/maintenance/" \
               --data-binary @- >/dev/null

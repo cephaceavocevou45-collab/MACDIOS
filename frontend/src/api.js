@@ -1,8 +1,9 @@
 import axios from "axios";
 import { traduire } from "./contexte/LangueContext";
 
-// L'URL vient de .env ; sans valeur, on utilise le serveur Django local.
-const baseURL = (import.meta.env.VITE_API_URL || "http://127.0.0.1:8000").replace(/\/$/, "");
+// En production, l'API passe par Nginx sur le même domaine ; en local Vite vise Django.
+const baseURL = (import.meta.env.VITE_API_URL || (import.meta.env.PROD ? "" : "http://127.0.0.1:8000"))
+  .replace(/\/$/, "");
 const requetesIdempotentesEnAttente = new Map();
 
 // Efface une seule fois les anciens JWT stockés avant le passage aux cookies HttpOnly.

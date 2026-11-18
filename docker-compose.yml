@@ -82,13 +82,17 @@ services:
       timeout: 5s
       retries: 5
       start_period: 30s
+    networks:
+      default:
+        aliases:
+          - backend.railway.internal
 
   frontend:
     build:
       context: .
       dockerfile: frontend/Dockerfile
       args:
-        VITE_API_URL: ${VITE_API_URL:-http://localhost:8000}
+        VITE_API_URL: ${VITE_API_URL:-}
         VITE_SENTRY_DSN: ${VITE_SENTRY_DSN:-}
     restart: unless-stopped
     depends_on:

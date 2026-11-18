@@ -140,7 +140,7 @@ En développement local (`ENVIRONMENT=development`), si Cloudinary n'est pas con
 
 ### Paiement manuel de l'abonnement
 
-Le paiement d'abonnement est manuel. Configurez au moins un des numéros `NUMERO_MTN`, `NUMERO_MOOV` ou `NUMERO_CELTIIS`. Le commerçant transfère le montant exact du plan, puis transmet la référence reçue par SMS et une capture d'écran facultative (JPEG, PNG ou WEBP, maximum 5 Mo). Les preuves sont envoyées à Cloudinary comme ressources authentifiées ; le backend produit un téléchargement signé temporaire seulement après contrôle de l'accès commerçant ou administrateur. Le disque éphémère de Render n'est ainsi pas utilisé pour les fichiers reçus.
+Le paiement d'abonnement est manuel. Configurez au moins un des numéros `NUMERO_MTN`, `NUMERO_MOOV` ou `NUMERO_CELTIIS`. Le commerçant transfère le montant exact du plan, puis transmet la référence reçue par SMS et une capture d'écran facultative (JPEG, PNG ou WEBP, maximum 5 Mo). Les preuves sont envoyées à Cloudinary comme ressources authentifiées ; le backend produit un téléchargement signé temporaire seulement après contrôle de l'accès commerçant ou administrateur. Les fichiers restent ainsi hors du disque éphémère des services applicatifs.
 
 Dans l'administration Django, ouvrez **Demandes de paiement manuel**. Les actions « Valider les demandes sélectionnées » et « Rejeter les demandes sélectionnées » enregistrent l'administrateur et la date dans le journal d'audit. Le rejet demande un motif, envoyé au commerçant par email. Une validation active le plan pour sa durée, envoie un email de confirmation et permet au commerçant de télécharger un reçu PDF certifié avec QR code.
 
@@ -216,7 +216,7 @@ cd backend
 python manage.py expirer_abonnements
 ```
 
-Sur Render, créez un service **Cron Job** relié au même dépôt et à la même base, avec le répertoire backend, la commande `python manage.py expirer_abonnements` et le calendrier `0 0 * * *` (minuit UTC). Partagez les variables de l'API, notamment `DATABASE_URL`. Render interprète les calendriers de Cron Jobs en UTC et permet de configurer des variables par service. [Documentation officielle Render Cron Jobs](https://render.com/docs/cronjobs)
+Sur Railway, créez un service **Cron** relié au même dépôt, configuré sur l'image/backend du service `backend`, avec la commande `python manage.py expirer_abonnements` et le calendrier `0 0 * * *` (minuit UTC). Réutilisez les variables backend, notamment la référence `DATABASE_URL` vers PostgreSQL. Railway planifie les tâches en UTC ; la commande doit se terminer pour permettre les exécutions suivantes. [Documentation officielle Railway Cron](https://docs.railway.com/cron-jobs)
 
 ### Migration des comptes existants vers email
 
@@ -247,7 +247,7 @@ Le format téléphone actuellement accepté par l'application reste `+229` suivi
 
 La commande `python manage.py notifier_echeances_abonnement` envoie un rappel aux essais et abonnements qui expirent dans les trois prochains jours. Elle peut être relancée sans renvoyer le rappel déjà accepté pour la même échéance. Un échec n'est pas marqué comme envoyé et sera retenté lors de l'exécution suivante.
 
-Pour l'exécuter chaque jour sur Render, créer un service **Cron Job** depuis le dépôt, définir la commande `python manage.py notifier_echeances_abonnement`, le répertoire racine `backend`, et le cron `0 6 * * *` (Render interprète les horaires en UTC, soit 07:00 au Bénin). Partager les mêmes variables d'environnement backend, y compris les clés Vonage. Laisser `SMS_SIMULATION=True` jusqu'à validation des messages en environnement de test.
+Pour l'exécuter chaque jour sur Railway, créer un service **Cron** depuis le dépôt, définir la commande `python manage.py notifier_echeances_abonnement` et le cron `0 6 * * *` (UTC, soit 07:00 au Bénin). Partager les mêmes variables d'environnement backend, y compris les clés Vonage. Laisser `SMS_SIMULATION=True` jusqu'à validation des messages en environnement de test.
 
 Les dettes ne sont pas modifiables directement. `POST /api/dettes/{id}/correction/` demande `nouveau_montant` et `raison`; chaque correction conserve l'ancien montant et apparaît dans l'historique et l'audit. Le reçu PDF complet est téléchargeable dans l'espace authentifié du commerçant, depuis `GET /api/dettes/{id}/recu/` ou la fiche client. Au premier téléchargement, il reçoit un UUID aléatoire persistant, une date de génération et un QR code ; les téléchargements suivants gardent le même code. Scanner le QR ouvre `/verifier/{code}` et ne révèle publiquement que l'authenticité et la date. Le PDF financier est réservé au commerçant connecté propriétaire ; le code seul ne donne pas accès aux montants ni aux identités. Un code devient invalide si le document associé est supprimé. Le solde imprimé est le solde total du client, car les paiements actuels ne sont pas affectés à une dette particulière. Les reçus d'abonnement validés suivent le même principe.
 
@@ -311,7 +311,7 @@ python manage.py sauvegarde_db
 python manage.py sauvegarde_db --sortie backups/avant-maintenance.json.gz.fernet
 ```
 
-La commande exige `BACKUP_ENCRYPTION_KEY`. En production, `BACKUP_ENCRYPTION_KEY` et `BACKUP_S3_BUCKET` doivent être configurées ensemble pour envoyer une sauvegarde chiffrée vers un stockage objet externe. Ces variables ne bloquent pas le démarrage : sans configuration complète, un avertissement indique que les sauvegardes distantes ne sont pas assurées et la commande `sauvegarde_db` échoue sans créer de copie locale sur le disque éphémère de Render. Cela signifie qu'aucune sauvegarde applicative S3 n'est disponible tant que le stockage n'est pas configuré. Le contenu est chiffré avant transfert, vérifié par Fernet et accompagné d'une empreinte SHA-256. Configurez une règle de cycle de vie dans le bucket pour la rétention voulue et protégez les droits de lecture/suppression. Générez une clé Fernet puis conservez-la comme secret dans l'hébergeur, jamais dans Git :
+La commande exige `BACKUP_ENCRYPTION_KEY`. En production, `BACKUP_ENCRYPTION_KEY` et `BACKUP_S3_BUCKET` doivent être configurées ensemble pour envoyer une sauvegarde chiffrée vers un stockage objet externe. Ces variables ne bloquent pas le démarrage : sans configuration complète, un avertissement indique que les sauvegardes distantes ne sont pas assurées et la commande `sauvegarde_db` échoue sans créer une copie locale éphémère. Le contenu est chiffré avant transfert, vérifié par Fernet et accompagné d'une empreinte SHA-256. Configurez une règle de cycle de vie dans le bucket pour la rétention voulue et protégez les droits de lecture/suppression. Générez une clé Fernet puis conservez-la comme secret dans l'hébergeur, jamais dans Git :
 
 ```bash
 python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
@@ -325,11 +325,12 @@ Objectifs provisoires à confirmer selon le plan d'hébergement : **RPO cible 24
 
 Pour tester une restauration sans toucher à la base de production : créez une base PostgreSQL temporaire isolée, configurez `DATABASE_URL` vers cette base, exécutez les migrations et `python manage.py restaure_db`, puis vérifiez les données financières et les relations attendues. Supprimez ensuite uniquement cette base temporaire après validation.
 
-### Sauvegardes automatiques Render PostgreSQL
+### Sauvegardes de la base Railway
 
-Cette tâche reste inactive tant que le stockage S3 n'est pas configuré. Quand vous déciderez de l'activer, créez dans Render un **Cron Job** quotidien relié au même dépôt et ajoutez les variables de base de données, `BACKUP_ENCRYPTION_KEY`, `BACKUP_S3_BUCKET`, `BACKUP_S3_PREFIX`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` et `AWS_REGION` (les identifiants AWS peuvent être remplacés par un mécanisme d'identité compatible). Utilisez `python manage.py sauvegarde_db` comme commande; paramétrez le calendrier, les droits du bucket et une règle de rétention indépendante. Vérifiez les exécutions et effectuez un exercice de restauration dans une base temporaire avant d'annoncer le RPO/RTO.
+Railway fournit des sauvegardes et une restauration de PostgreSQL selon le plan choisi. Activez-les depuis le service de base de données, vérifiez la politique de rétention et réalisez un exercice de restauration vers une base isolée avant de fixer le RPO/RTO. [Documentation officielle Railway sur la restauration PostgreSQL](https://docs.railway.com/volumes/point-in-time-recovery)
 
-Consulter la [documentation Render sur la récupération et les sauvegardes PostgreSQL](https://render.com/docs/postgresql-backups) avant de choisir le plan. Après une restauration PITR, Render crée une nouvelle instance : validez son contenu, puis remplacez la connexion de l'application par celle de l'instance restaurée.
+La copie applicative chiffrée vers S3 reste une option distincte. Si elle est activée, créez un service **Cron** Railway avec les mêmes variables backend et exécutez `python manage.py sauvegarde_db` selon une cadence définie. Sans bucket et clé Fernet, aucune sauvegarde S3 ne sera produite ; les sauvegardes natives PostgreSQL et cette copie S3 ne se remplacent pas mutuellement.
+
 
 ## Données de démonstration
 
@@ -368,20 +369,22 @@ La première exécution demande un mot de passe masqué pour le compte `demo@nob
 
 Distribué sous licence MIT. Compléter l'année et le titulaire dans [`LICENSE`](LICENSE) avant publication.
 
-## Déploiement automatisé en production
+## Déploiement en production sur Railway
 
-Le workflow `.github/workflows/ci.yml` réserve le déploiement de production aux commits poussés sur `main`, après réussite des tests backend, du lint, de l'audit des dépendances et du build frontend. Il vérifie le SHA réellement servi par Render et Vercel. La maintenance est activée avant les déclenchements puis restaurée à l'état antérieur uniquement après confirmation des deux SHA et des réponses HTTP. Si une vérification échoue ou expire, la maintenance reste active : le Super Admin doit contrôler les déploiements Render/Vercel puis la désactiver depuis `/admin/maintenance` après validation.
+L'architecture Railway prévoit deux services applicatifs nommés exactement `backend` et `frontend`, plus un service PostgreSQL. Le frontend Nginx sert React et transmet `/api/` au backend via le réseau privé Railway (`backend.railway.internal:8000`) ; les appels navigateur restent sur le même domaine. Le backend n'a donc pas besoin d'un domaine public. La configuration de ces services et le transfert de la base existante sont des opérations à effectuer dans Railway avant le basculement DNS.
 
-### Configuration initiale requise
+### Préparer les services Railway
 
-1. Sur Render, créez un Deploy Hook pour le service backend. Sur Vercel, créez un Deploy Hook de production pour la branche `main`. Ajoutez les URL comme secrets GitHub `RENDER_DEPLOY_HOOK_URL` et `VERCEL_DEPLOY_HOOK_URL`; ne les écrivez jamais dans le dépôt.
-2. Générez un secret aléatoire dédié d'au moins 32 caractères. Définissez-le comme `DEPLOYMENT_MAINTENANCE_TOKEN` dans l'environnement du service Render **et** comme secret GitHub de même nom. Ce n'est pas le mot de passe du Super Admin. Le point API machine reste fermé si le secret n'est pas configuré.
-3. Vercel : activez l'exposition des variables système dans les réglages du projet pour que `VERCEL_GIT_COMMIT_SHA` soit disponible au build. Le build écrit ce SHA dans `version.json`; la CI s'en sert uniquement pour vérifier la version publiée.
-4. Désactivez les déploiements Git directs dans Render et Vercel : Render utilise le hook avec le SHA testé, et `frontend/vercel.json` désactive les déploiements automatiques Git pour éviter les courses. Le projet doit rester connecté au dépôt pour que les hooks fonctionnent. Vercel précise que les hooks ne fonctionnent pas si l'ancienne option `github.enabled` est explicitement `false`; ne la définissez pas.
-5. Le tout premier déploiement de ce mécanisme est une étape d'amorçage : la version déjà en production ne connaît pas encore `/api/deploiement/maintenance/`. Déployez une première fois ce changement depuis les tableaux de bord après validation CI (vous pouvez activer la maintenance manuellement juste avant). Une fois cette version en ligne et le jeton Render configuré, les déploiements suivants seront orchestrés automatiquement.
+1. Créez les services `backend` et `frontend` dans Railway. Utilisez la racine du dépôt comme contexte et indiquez respectivement `backend/Dockerfile` et `frontend/Dockerfile` comme Dockerfile. Désactivez leurs déploiements automatiques déclenchés directement par GitHub : la CI les publiera après validation. Le backend écoute sur le port `8000`; le frontend Nginx écoute sur `80` et doit recevoir un domaine public.
+2. Créez un service PostgreSQL. Dans les variables du backend, définissez `DATABASE_URL` comme référence Railway vers la variable de connexion PostgreSQL. Configurez les variables habituelles de production documentées plus haut (`ENVIRONMENT=production`, `DEBUG=False`, `SECRET_KEY`, domaines exacts dans `ALLOWED_HOSTS`, `CORS_ALLOWED_ORIGINS`, `CSRF_TRUSTED_ORIGINS`, URLs frontend, Cloudinary et Brevo selon les fonctions activées). Aucune variable Redis ou S3 n'est requise au démarrage.
+3. Après attribution du domaine frontend, utilisez son URL HTTPS exacte dans `FRONTEND_URL`, `PUBLIC_FRONTEND_URL`, `ALLOWED_HOSTS`, `CORS_ALLOWED_ORIGINS` et `CSRF_TRUSTED_ORIGINS` selon les usages de chaque réglage. Configurez `DEPLOYMENT_MAINTENANCE_TOKEN` avec le même secret dédié (au moins 32 caractères) dans Railway et les secrets GitHub.
+4. Exportez la base PostgreSQL Render et importez-la dans la base Railway avant de modifier le domaine public. Faites une sauvegarde vérifiable, contrôlez les migrations/données et testez le parcours d'écriture sur Railway. Gardez l'ancien hébergement disponible pendant la validation ; ne supprimez Render/Vercel qu'après validation du trafic, des fichiers Cloudinary, des emails et des reçus.
+5. Pour le premier déploiement, configurez manuellement les trois services, les variables, le domaine frontend et la base. Laissez la variable GitHub `PRODUCTION_DEPLOY_ENABLED` absente ou différente de `true` pendant cet amorçage.
 
-6. Tant que l'amorçage et la configuration ne sont pas terminés, laissez la variable GitHub `PRODUCTION_DEPLOY_ENABLED` absente ou différente de `true`. Après l'amorçage, créez cette **Actions variable** avec la valeur `true` pour activer les déploiements orchestrés.
+### Déploiements automatiques après amorçage
 
-Après cette configuration, chaque commit de `main` suit le pipeline. Les nouvelles versions ne sont pas installées par le bouton Maintenance : elles sont déployées par cette CI. Le bouton reste un contrôle manuel de maintenance. En cas d'échec, ne désactivez pas la maintenance avant d'avoir vérifié que l'API répond, que `/api/version/` et `/version.json` affichent le SHA attendu, et que le parcours principal fonctionne.
+Après réussite de la CI sur un push `main`, le workflow active le mode maintenance, transmet le SHA testé dans la variable optionnelle `APP_RELEASE_SHA`, déploie d'abord `backend`, puis `frontend` avec Railway CLI, vérifie `/api/sante/`, `/api/version/`, `/version.json` et la page d'accueil. Cette variable n'est pas nécessaire au démarrage ; elle sert uniquement à vérifier le commit publié. Le workflow restaure l'état de maintenance antérieur uniquement après confirmation du SHA et des réponses HTTP. Si la vérification échoue, la maintenance reste active pour permettre une vérification manuelle.
 
-Secrets GitHub nécessaires : `DEPLOYMENT_MAINTENANCE_TOKEN`, `RENDER_DEPLOY_HOOK_URL`, `VERCEL_DEPLOY_HOOK_URL`. Actions variable GitHub : `PRODUCTION_DEPLOY_ENABLED=true` après l'amorçage. Variable Render nécessaire : `DEPLOYMENT_MAINTENANCE_TOKEN` (facultative au démarrage de Django, indispensable pour l'automatisation). Aucun nouveau paquet Python ou JavaScript n'est ajouté.
+Dans GitHub, configurez le secret `RAILWAY_TOKEN` avec un **Project Token** Railway limité au projet/environnement de production, le secret `DEPLOYMENT_MAINTENANCE_TOKEN`, et la variable Actions `RAILWAY_FRONTEND_URL` avec l'URL HTTPS publique du frontend. Après le déploiement manuel initial et un test réussi de l'endpoint de maintenance, définissez `PRODUCTION_DEPLOY_ENABLED=true` pour activer le déploiement depuis la CI. Les nouvelles versions sont publiées par le workflow ; le bouton Maintenance ne fait qu'activer ou arrêter l'accès pendant l'opération.
+
+Aucun paquet Python ou JavaScript supplémentaire n'est ajouté pour Railway. Les variables `RAILWAY_TOKEN` et `RAILWAY_FRONTEND_URL` servent uniquement au workflow GitHub ; elles ne doivent pas être ajoutées au runtime Django.

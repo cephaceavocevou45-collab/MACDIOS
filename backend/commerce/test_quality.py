@@ -19,7 +19,6 @@ class QualiteProjetTests(TestCase):
         environnement_base = os.environ.copy()
         environnement_base.update({
             "ENVIRONMENT": "production",
-            "RENDER": "False",
             "RAILWAY_ENVIRONMENT": "",
             "ALLOWED_HOSTS": "api.example.test",
             "CORS_ALLOWED_ORIGINS": "https://app.example.test",

@@ -19,10 +19,9 @@ if not ENVIRONMENT:
 if ENVIRONMENT not in {"development", "test", "production"}:
     raise ImproperlyConfigured("ENVIRONMENT doit être development, test ou production.")
 
-# Render et Railway sont reconnus même si ENVIRONMENT a été oublié dans leur configuration.
+# Railway est reconnu même si ENVIRONMENT a été oublié dans sa configuration.
 EST_PRODUCTION = (
     ENVIRONMENT == "production"
-    or config("RENDER", default=False, cast=bool)
     or bool(config("RAILWAY_ENVIRONMENT", default="").strip())
 )
 
@@ -183,7 +182,7 @@ AXES_USERNAME_CALLABLE = "commerce.security.identifiant_connexion"
 AXES_PASSWORD_FORM_FIELD = "mot_de_passe"
 AXES_SENSITIVE_PARAMETERS = ["email", "telephone", "mot_de_passe", "token", "authorization", "secret", "api-key"]
 if EST_PRODUCTION:
-    # Render ajoute l'adresse réelle en fin de X-Forwarded-For derrière son proxy TLS.
+    # Railway place l'application derrière son proxy HTTPS.
     AXES_IPWARE_META_PRECEDENCE_ORDER = ("HTTP_X_FORWARDED_FOR", "REMOTE_ADDR")
     AXES_IPWARE_PROXY_COUNT = 1
 
@@ -304,7 +303,7 @@ SIMPLE_JWT = {
     "BLACKLIST_AFTER_ROTATION": True,
 }
 
-# En-têtes de transport adaptés à Render / reverse proxy en production.
+# En-têtes de transport adaptés au reverse proxy HTTPS en production.
 SECURE_SSL_REDIRECT = config("SECURE_SSL_REDIRECT", default=EST_PRODUCTION, cast=bool)
 SESSION_COOKIE_SECURE = EST_PRODUCTION
 CSRF_COOKIE_SECURE = EST_PRODUCTION

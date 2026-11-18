@@ -3,7 +3,7 @@ import react from "@vitejs/plugin-react";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 
-// Ce petit manifeste permet à la CI de vérifier le SHA réellement servi par Vercel.
+// Ce manifeste permet à la CI de vérifier le SHA réellement servi par Railway.
 const versionDeploiement = {
   name: "nobi-version-deploiement",
   apply: "build",
@@ -12,7 +12,7 @@ const versionDeploiement = {
     mkdirSync(dossierSortie, { recursive: true });
     writeFileSync(
       resolve(dossierSortie, "version.json"),
-      JSON.stringify({ commit: process.env.VERCEL_GIT_COMMIT_SHA || "unknown" }),
+      JSON.stringify({ commit: process.env.APP_RELEASE_SHA || "unknown" }),
       "utf8",
     );
   },

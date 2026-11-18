@@ -172,5 +172,5 @@ class MaintenanceDeploiement(APIView):
 @permission_classes([AllowAny])
 def version_deployee(request):
     """Expose uniquement le SHA public du commit pour vérifier la fin d'un déploiement."""
-    commit = os.environ.get("RENDER_GIT_COMMIT", "").strip()
+    commit = os.environ.get("APP_RELEASE_SHA", "").strip()
     return Response({"commit": commit or "unknown"}, headers={"Cache-Control": "no-store, max-age=0"})
