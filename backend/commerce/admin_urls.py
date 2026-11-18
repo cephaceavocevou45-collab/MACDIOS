@@ -9,12 +9,14 @@ from .admin_api import (
     PaiementsEnAttenteBackOffice, PreuvePaiementBackOffice,
     StatistiquesPlateforme, connexion_backoffice,
 )
+from .maintenance_api import ModeMaintenanceBackOffice
 
 
 urlpatterns = [
     path("auth/connexion/", connexion_backoffice, name="admin-connexion"),
     path("statistiques/", StatistiquesPlateforme.as_view(), name="admin-statistiques"),
     path("offre-essai/", ConfigurationOffreEssaiBackOffice.as_view(), name="admin-offre-essai"),
+    path("maintenance/", ModeMaintenanceBackOffice.as_view(), name="admin-maintenance"),
     path("utilisateurs/", ListeUtilisateursBackOffice.as_view(), name="admin-utilisateurs"),
     path("utilisateurs/<uuid:pk>/suspendre/", ActionUtilisateurBackOffice.as_view(), {"action": "suspendre"}, name="admin-utilisateur-suspendre"),
     path("utilisateurs/<uuid:pk>/reactiver/", ActionUtilisateurBackOffice.as_view(), {"action": "reactiver"}, name="admin-utilisateur-reactiver"),

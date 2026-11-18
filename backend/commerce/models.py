@@ -7,7 +7,7 @@ from django.core.validators import MinValueValidator
 from django.db import models
 from django.db.models import Q, Sum
 from django.db.models.functions import Coalesce
-from .validators import valider_telephone_benin
+from .validators import normaliser_telephone_international, valider_telephone_benin
 
 
 class CommercantManager(BaseUserManager):
@@ -20,7 +20,7 @@ class CommercantManager(BaseUserManager):
         validate_email(email)
         telephone = extra_fields.get("telephone", "")
         if telephone:
-            valider_telephone_benin(telephone)
+            extra_fields["telephone"] = normaliser_telephone_international(telephone)
         user = self.model(email=email, **extra_fields)
         user.set_password(password)
         user.save(using=self._db)
@@ -35,12 +35,21 @@ class CommercantManager(BaseUserManager):
         return self.create_user(email, password, **extra_fields)
 
 
+def profil_logo_upload_to(instance, nom_fichier):
+    """Stocke le logo sous un nom aléatoire pour éviter toute fuite de nom de fichier."""
+    extension = nom_fichier.rsplit(".", 1)[-1].lower()[:5]
+    return f"profils/{uuid.uuid4().hex}.{extension}"
+
+
 class Commercant(AbstractUser):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     username = None
     email = models.EmailField(max_length=254, unique=True)
     telephone = models.CharField(max_length=20, blank=True, validators=[valider_telephone_benin])
     nom_boutique = models.CharField(max_length=120)
+    logo_profil = models.ImageField(upload_to=profil_logo_upload_to, null=True, blank=True)
+    adresse = models.CharField(max_length=200, blank=True)
+    ville = models.CharField(max_length=120, blank=True)
     # Date à laquelle l'utilisateur a accepté les textes juridiques en vigueur.
     consentement_le = models.DateTimeField(null=True, blank=True)
     motif_suspension = models.CharField(max_length=250, blank=True)
@@ -149,7 +158,13 @@ class JournalAudit(models.Model):
 class Produit(models.Model):
     commercant = models.ForeignKey(Commercant, on_delete=models.CASCADE, related_name="produits")
     nom = models.CharField(max_length=120)
+    # Identifiant scannable par un lecteur clavier ; facultatif pour le catalogue existant.
+    code_barres = models.CharField(max_length=64, blank=True, default="")
     prix = models.DecimalField(max_digits=12, decimal_places=2, validators=[MinValueValidator(0)])
+    # Peut rester vide pour les produits historiques dont le coût est inconnu.
+    prix_achat = models.DecimalField(
+        max_digits=12, decimal_places=2, null=True, blank=True, validators=[MinValueValidator(0)]
+    )
     quantite_stock = models.PositiveIntegerField(default=0)
     seuil_alerte = models.PositiveIntegerField(default=5)
     date_creation = models.DateTimeField(auto_now_add=True)
@@ -158,7 +173,14 @@ class Produit(models.Model):
 
     class Meta:
         ordering = ["nom"]
-        constraints = [models.CheckConstraint(condition=models.Q(prix__gte=0), name="produit_prix_non_negatif")]
+        constraints = [
+            models.CheckConstraint(condition=models.Q(prix__gte=0), name="produit_prix_non_negatif"),
+            models.UniqueConstraint(
+                fields=["commercant", "code_barres"],
+                condition=~models.Q(code_barres=""),
+                name="produit_code_barres_unique_commercant",
+            ),
+        ]
 
     def __str__(self):
         return self.nom
@@ -220,11 +242,19 @@ class Vente(models.Model):
     client = models.ForeignKey(Client, on_delete=models.SET_NULL, related_name="ventes", null=True, blank=True)
     quantite = models.PositiveIntegerField(validators=[MinValueValidator(1)])
     prix_unitaire = models.DecimalField(max_digits=12, decimal_places=2)
+    # Instantané du coût au moment de la vente : modifier le produit ne réécrit pas l'historique.
+    prix_achat_unitaire = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True, editable=False)
     total = models.DecimalField(max_digits=14, decimal_places=2)
     date = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         ordering = ["-date"]
+
+    @property
+    def benefice_brut(self):
+        if self.prix_achat_unitaire is None:
+            return None
+        return self.total - self.prix_achat_unitaire * self.quantite
 
     def __str__(self):
         return f"{self.quantite} × {self.produit.nom}"
@@ -311,6 +341,34 @@ class ConfigurationEssai(models.Model):
         return cls.objects.get_or_create(pk=1)[0]
 
 
+class ModeMaintenance(models.Model):
+    """Réglage global du mode maintenance, créé à la première activation."""
+
+    actif = models.BooleanField(default=False)
+    message = models.CharField(
+        max_length=300,
+        default="Une maintenance est en cours. Merci de revenir dans quelques instants.",
+    )
+    modifie_le = models.DateTimeField(auto_now=True)
+    modifie_par = models.ForeignKey(
+        "commerce.Commercant", null=True, blank=True,
+        on_delete=models.SET_NULL, related_name="modes_maintenance_modifies",
+    )
+
+    class Meta:
+        verbose_name = "Mode maintenance"
+        verbose_name_plural = "Mode maintenance"
+
+    def save(self, *args, **kwargs):
+        # Une configuration globale unique simplifie la lecture et les mises à jour.
+        self.pk = 1
+        super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        # Le réglage global ne doit pas disparaître par une suppression accidentelle.
+        return None
+
+
 class Abonnement(models.Model):
     class Statut(models.TextChoices):
         ESSAI = "essai", "Essai"
@@ -393,3 +451,80 @@ class DemandePaiementManuel(models.Model):
 
     def __str__(self):
         return f"{self.commercant} — {self.get_statut_display()} — {self.plan}"
+
+
+class Fournisseur(models.Model):
+    """Fournisseur appartenant à l'espace d'un seul commerçant."""
+
+    commercant = models.ForeignKey(Commercant, on_delete=models.CASCADE, related_name="fournisseurs")
+    nom = models.CharField(max_length=160)
+    telephone = models.CharField(max_length=32, blank=True)
+    email = models.EmailField(blank=True)
+    adresse = models.CharField(max_length=250, blank=True)
+    actif = models.BooleanField(default=True, db_index=True)
+    date_creation = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["nom"]
+        constraints = [models.UniqueConstraint(fields=["commercant", "nom"], name="fournisseur_nom_unique_par_commercant")]
+
+    def __str__(self):
+        return self.nom
+
+
+class Approvisionnement(models.Model):
+    """Réception définitive d'un achat : le stock augmente lors de sa création."""
+
+    commercant = models.ForeignKey(Commercant, on_delete=models.CASCADE, related_name="approvisionnements")
+    fournisseur = models.ForeignKey(Fournisseur, on_delete=models.PROTECT, related_name="approvisionnements", null=True, blank=True)
+    reference = models.CharField(max_length=100, blank=True)
+    note = models.CharField(max_length=250, blank=True)
+    date_reception = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        ordering = ["-date_reception", "-id"]
+        indexes = [models.Index(fields=["commercant", "date_reception"])]
+
+    def __str__(self):
+        return self.reference or f"Réception {self.pk}"
+
+
+class LigneApprovisionnement(models.Model):
+    approvisionnement = models.ForeignKey(Approvisionnement, on_delete=models.PROTECT, related_name="lignes")
+    produit = models.ForeignKey(Produit, on_delete=models.PROTECT, related_name="lignes_approvisionnement")
+    quantite = models.PositiveIntegerField(validators=[MinValueValidator(1)])
+    prix_achat_unitaire = models.DecimalField(max_digits=12, decimal_places=2, validators=[MinValueValidator(0)])
+
+    class Meta:
+        ordering = ["id"]
+        constraints = [models.UniqueConstraint(fields=["approvisionnement", "produit"], name="produit_unique_par_approvisionnement")]
+
+    @property
+    def total(self):
+        return self.prix_achat_unitaire * self.quantite
+
+
+class MouvementStock(models.Model):
+    """Trace chaque entrée ou sortie, avec les quantités avant et après l'opération."""
+
+    class Type(models.TextChoices):
+        INITIAL = "initial", "Stock initial"
+        VENTE = "vente", "Vente"
+        ACHAT = "achat", "Réception d'achat"
+        AJUSTEMENT = "ajustement", "Ajustement manuel"
+
+    commercant = models.ForeignKey(Commercant, on_delete=models.CASCADE, related_name="mouvements_stock")
+    produit = models.ForeignKey(Produit, on_delete=models.PROTECT, related_name="mouvements_stock")
+    type = models.CharField(max_length=16, choices=Type.choices)
+    variation = models.IntegerField()
+    quantite_avant = models.PositiveIntegerField()
+    quantite_apres = models.PositiveIntegerField()
+    note = models.CharField(max_length=250, blank=True)
+    vente = models.ForeignKey(Vente, on_delete=models.SET_NULL, null=True, blank=True, related_name="mouvements_stock")
+    ligne_approvisionnement = models.ForeignKey(LigneApprovisionnement, on_delete=models.SET_NULL, null=True, blank=True, related_name="mouvements_stock")
+    utilisateur = models.ForeignKey(Commercant, on_delete=models.SET_NULL, null=True, blank=True, related_name="mouvements_stock_effectues")
+    date = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-date", "-id"]
+        indexes = [models.Index(fields=["commercant", "date"]), models.Index(fields=["commercant", "produit", "date"])]

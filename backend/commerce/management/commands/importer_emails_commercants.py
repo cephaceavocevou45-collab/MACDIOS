@@ -8,6 +8,8 @@ from django.core.management.base import BaseCommand, CommandError
 from django.core.validators import validate_email
 from django.db import transaction
 
+from commerce.validators import normaliser_telephone_international
+
 
 class Command(BaseCommand):
     help = "Importe les emails confirmés des anciens comptes depuis un CSV telephone,email."
@@ -33,21 +35,29 @@ class Command(BaseCommand):
                     if not telephone or not email:
                         raise CommandError(f"Ligne {numero_ligne} : téléphone et email sont obligatoires.")
                     try:
+                        telephone_normalise = normaliser_telephone_international(telephone)
+                    except ValidationError as erreur:
+                        raise CommandError(f"Ligne {numero_ligne} : numéro de téléphone invalide.") from erreur
+                    try:
                         validate_email(email)
                     except ValidationError as erreur:
                         raise CommandError(f"Ligne {numero_ligne} : adresse email invalide.") from erreur
-                    if telephone in telephones_vus:
+                    if telephone_normalise in telephones_vus:
                         raise CommandError(f"Ligne {numero_ligne} : téléphone présent plusieurs fois dans le fichier.")
                     if email in emails_vus:
                         raise CommandError(f"Ligne {numero_ligne} : email présent plusieurs fois dans le fichier.")
-                    commercants = list(Utilisateur.objects.select_for_update().filter(telephone=telephone)[:2])
+                    # Les comptes importés historiquement peuvent conserver l'ancien format béninois.
+                    commercants = list(
+                        Utilisateur.objects.select_for_update()
+                        .filter(telephone__in={telephone, telephone_normalise})[:2]
+                    )
                     if len(commercants) != 1:
                         raise CommandError(f"Ligne {numero_ligne} : aucun compte unique ne correspond à ce téléphone.")
                     conflit = Utilisateur.objects.exclude(pk=commercants[0].pk).filter(email__iexact=email).exists()
                     if conflit:
                         raise CommandError(f"Ligne {numero_ligne} : cet email est déjà attribué à un autre compte.")
                     entrees.append((commercants[0], email))
-                    telephones_vus.add(telephone)
+                    telephones_vus.add(telephone_normalise)
                     emails_vus.add(email)
         except OSError as erreur:
             raise CommandError("Impossible de lire le fichier CSV indiqué.") from erreur

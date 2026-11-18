@@ -17,6 +17,7 @@ const chemins = {
   plus: <><path d="M12 5v14M5 12h14"/></>,
   info: <><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></>,
   subscription: <><rect x="3" y="5" width="18" height="15" rx="2"/><path d="M3 10h18M7 15h3"/><path d="M7 3v4M17 3v4"/></>,
+  settings: <><circle cx="12" cy="12" r="3"/><path d="m19.4 15 .1.1 1.4 1.1-1.5 2.6-1.7-.6a8 8 0 0 1-1.7 1l-.3 1.8h-3l-.3-1.8a8 8 0 0 1-1.7-1l-1.7.6-1.5-2.6 1.4-1.1a7 7 0 0 1 0-2l-1.4-1.1 1.5-2.6 1.7.6a8 8 0 0 1 1.7-1l.3-1.8h3l.3 1.8a8 8 0 0 1 1.7 1l1.7-.6 1.5 2.6-1.4 1.1a7 7 0 0 1 0 2Z"/></>,
 };
 
 export default function Icon({ name, size = 20, className = "", strokeWidth = 1.8 }) {

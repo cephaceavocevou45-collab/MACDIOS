@@ -1,4 +1,5 @@
 import math
+import logging
 from datetime import timedelta
 from decimal import Decimal
 
@@ -11,10 +12,106 @@ from django.utils import timezone
 from rest_framework import serializers
 from drf_spectacular.utils import extend_schema_field
 
-from .models import Abonnement, Client, ConfigurationEssai, CorrectionDette, DemandePaiementManuel, Dette, JournalAudit, Paiement, PaiementAbonnementHistorique, Plan, Produit, Vente
-from .validators import valider_telephone_benin
+from .models import Abonnement, Approvisionnement, Client, ConfigurationEssai, CorrectionDette, DemandePaiementManuel, Dette, Fournisseur, JournalAudit, LigneApprovisionnement, MouvementStock, Paiement, PaiementAbonnementHistorique, Plan, Produit, Vente
+from .validators import normaliser_telephone_international
+from .services.profil_image import ImageProfilInvalide, nettoyer_image_profil, url_logo_profil
 
 Commercant = get_user_model()
+logger = logging.getLogger(__name__)
+
+
+class ImageProfilField(serializers.FileField):
+    """Réencode l'image envoyée avant de la confier au stockage Cloudinary."""
+
+    def to_internal_value(self, data):
+        fichier = super().to_internal_value(data)
+        try:
+            return nettoyer_image_profil(fichier)
+        except ImageProfilInvalide as erreur:
+            raise serializers.ValidationError(str(erreur)) from erreur
+
+
+class NomAfficheField(serializers.CharField):
+    """Lit le nom de boutique ou celui du sous-admin depuis son profil existant."""
+
+    def get_attribute(self, utilisateur):
+        profil = getattr(utilisateur, "profil_sous_admin", None)
+        return profil.nom if utilisateur.is_staff and profil else utilisateur.nom_boutique
+
+
+class ProfilSerializer(serializers.Serializer):
+    """Profil de l'utilisateur authentifié, quel que soit son rôle."""
+
+    nom_affiche = NomAfficheField(max_length=120, required=False, trim_whitespace=True)
+    email = serializers.EmailField(read_only=True)
+    telephone = serializers.CharField(max_length=20, required=False, allow_blank=True)
+    adresse = serializers.CharField(max_length=200, required=False, allow_blank=True, trim_whitespace=True)
+    ville = serializers.CharField(max_length=120, required=False, allow_blank=True, trim_whitespace=True)
+    logo = ImageProfilField(required=False, allow_empty_file=False, write_only=True)
+    logo_url = serializers.SerializerMethodField()
+
+    def get_nom_affiche(self, utilisateur):
+        profil = getattr(utilisateur, "profil_sous_admin", None)
+        if utilisateur.is_staff and profil:
+            return profil.nom
+        return utilisateur.nom_boutique
+
+    def get_logo_url(self, utilisateur):
+        url = url_logo_profil(utilisateur)
+        requete = self.context.get("request")
+        if url and settings.LOGO_LOCAL_DEVELOPPEMENT and requete:
+            return requete.build_absolute_uri(url)
+        return url
+
+    def to_representation(self, utilisateur):
+        representation = super().to_representation(utilisateur)
+        representation["nom_affiche"] = self.get_nom_affiche(utilisateur)
+        return representation
+
+    def validate_telephone(self, valeur):
+        if not valeur:
+            return ""
+        try:
+            return normaliser_telephone_international(valeur)
+        except DjangoValidationError as erreur:
+            raise serializers.ValidationError(erreur.messages) from erreur
+
+    def update(self, utilisateur, donnees):
+        logo_precedent = utilisateur.logo_profil.name if utilisateur.logo_profil else ""
+        profil_sous_admin = getattr(utilisateur, "profil_sous_admin", None)
+        champs_utilisateur = []
+
+        nom_affiche = donnees.pop("nom_affiche", None)
+        if nom_affiche is not None:
+            if utilisateur.is_staff and profil_sous_admin:
+                profil_sous_admin.nom = nom_affiche
+                profil_sous_admin.save(update_fields=["nom"])
+            else:
+                utilisateur.nom_boutique = nom_affiche
+                champs_utilisateur.append("nom_boutique")
+
+        for champ in ("telephone", "adresse", "ville", "logo_profil"):
+            cle = "logo" if champ == "logo_profil" else champ
+            if cle in donnees:
+                setattr(utilisateur, champ, donnees.pop(cle))
+                champs_utilisateur.append(champ)
+
+        if champs_utilisateur:
+            utilisateur.save(update_fields=champs_utilisateur)
+
+        nouveau_logo = utilisateur.logo_profil.name if utilisateur.logo_profil else ""
+        if logo_precedent and logo_precedent != nouveau_logo:
+            from .services.profil_image import invalider_cache_logo_profil
+
+            try:
+                suppression_reussie = utilisateur.logo_profil.storage.delete(logo_precedent)
+                if suppression_reussie is False:
+                    logger.warning("Cloudinary n'a pas confirmé la suppression de l'ancien logo.")
+            except Exception:
+                # La mise à jour du profil reste utilisable ; l'échec de nettoyage est journalisé.
+                logger.warning("Échec de suppression d'un ancien logo Cloudinary.")
+            invalider_cache_logo_profil()
+        return utilisateur
 
 
 class InscriptionSerializer(serializers.ModelSerializer):
@@ -37,10 +134,9 @@ class InscriptionSerializer(serializers.ModelSerializer):
         if not valeur:
             return ""
         try:
-            valider_telephone_benin(valeur)
+            return normaliser_telephone_international(valeur)
         except DjangoValidationError as erreur:
             raise serializers.ValidationError(erreur.messages) from erreur
-        return valeur
 
     def validate_accepte_conditions(self, valeur):
         if not valeur:
@@ -94,8 +190,162 @@ class ConnexionSerializer(serializers.Serializer):
 class ProduitSerializer(serializers.ModelSerializer):
     class Meta:
         model = Produit
-        fields = ["id", "nom", "prix", "quantite_stock", "seuil_alerte", "date_creation", "actif"]
+        fields = ["id", "nom", "code_barres", "prix", "prix_achat", "quantite_stock", "seuil_alerte", "date_creation", "actif"]
         read_only_fields = ["id", "date_creation", "actif"]
+
+    def validate_code_barres(self, valeur):
+        valeur = valeur.strip()
+        if not valeur:
+            return ""
+        commercant = self.context["request"].user
+        doublons = Produit.objects.filter(commercant=commercant, code_barres__iexact=valeur)
+        if self.instance:
+            doublons = doublons.exclude(pk=self.instance.pk)
+        if doublons.exists():
+            raise serializers.ValidationError("Ce code-barres est déjà utilisé par un autre produit de votre boutique.")
+        return valeur
+
+    @transaction.atomic
+    def create(self, validated_data):
+        produit = super().create(validated_data)
+        if produit.quantite_stock:
+            MouvementStock.objects.create(
+                commercant=produit.commercant, produit=produit,
+                type=MouvementStock.Type.INITIAL, variation=produit.quantite_stock,
+                quantite_avant=0, quantite_apres=produit.quantite_stock,
+                note="Stock initial saisi à la création du produit.",
+                utilisateur=self.context.get("request").user if self.context.get("request") else None,
+            )
+        return produit
+
+    @transaction.atomic
+    def update(self, instance, validated_data):
+        request = self.context.get("request")
+        commercant = request.user if request and request.user.is_authenticated else instance.commercant
+        produit = Produit.objects.select_for_update().get(pk=instance.pk, commercant=commercant)
+        stock_avant = produit.quantite_stock
+        produit = super().update(produit, validated_data)
+        if produit.quantite_stock != stock_avant:
+            MouvementStock.objects.create(
+                commercant=commercant, produit=produit,
+                type=MouvementStock.Type.AJUSTEMENT,
+                variation=produit.quantite_stock - stock_avant,
+                quantite_avant=stock_avant, quantite_apres=produit.quantite_stock,
+                note="Ajustement effectué depuis la fiche produit.",
+                utilisateur=request.user if request and request.user.is_authenticated else None,
+            )
+        return produit
+
+
+class AjustementStockSerializer(serializers.Serializer):
+    variation = serializers.IntegerField(min_value=-1_000_000, max_value=1_000_000)
+    note = serializers.CharField(max_length=250, allow_blank=False, trim_whitespace=True)
+
+    def validate_variation(self, valeur):
+        if valeur == 0:
+            raise serializers.ValidationError("La variation du stock ne peut pas être nulle.")
+        return valeur
+
+
+class FournisseurSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Fournisseur
+        fields = ["id", "nom", "telephone", "email", "adresse", "actif", "date_creation"]
+        read_only_fields = ["id", "actif", "date_creation"]
+
+
+class LigneApprovisionnementLectureSerializer(serializers.ModelSerializer):
+    produit_nom = serializers.CharField(source="produit.nom", read_only=True)
+    total = serializers.DecimalField(max_digits=14, decimal_places=2, read_only=True)
+
+    class Meta:
+        model = LigneApprovisionnement
+        fields = ["id", "produit", "produit_nom", "quantite", "prix_achat_unitaire", "total"]
+        read_only_fields = fields
+
+
+class LigneApprovisionnementEcritureSerializer(serializers.Serializer):
+    produit = serializers.PrimaryKeyRelatedField(queryset=Produit.objects.none())
+    quantite = serializers.IntegerField(min_value=1, max_value=1_000_000)
+    prix_achat_unitaire = serializers.DecimalField(max_digits=12, decimal_places=2, min_value=Decimal("0"))
+
+
+class ApprovisionnementSerializer(serializers.ModelSerializer):
+    fournisseur = serializers.PrimaryKeyRelatedField(queryset=Fournisseur.objects.none(), required=False, allow_null=True)
+    fournisseur_nom = serializers.CharField(source="fournisseur.nom", read_only=True, allow_null=True)
+    lignes = LigneApprovisionnementEcritureSerializer(many=True, write_only=True, allow_empty=False)
+    details = LigneApprovisionnementLectureSerializer(source="lignes", many=True, read_only=True)
+    total = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Approvisionnement
+        fields = ["id", "fournisseur", "fournisseur_nom", "reference", "note", "date_reception", "lignes", "details", "total"]
+        read_only_fields = ["id", "date_reception", "details", "total"]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        request = self.context.get("request")
+        if request and request.user.is_authenticated:
+            self.fields["fournisseur"].queryset = Fournisseur.objects.filter(commercant=request.user, actif=True)
+            # Le serializer enfant d'une liste ne reçoit pas toujours le contexte
+            # à son initialisation. Le queryset est donc limité ici, côté parent.
+            self.fields["lignes"].child.fields["produit"].queryset = Produit.objects.filter(
+                commercant=request.user, actif=True
+            )
+
+    def get_total(self, approvisionnement):
+        return sum((ligne.total for ligne in approvisionnement.lignes.all()), Decimal("0"))
+
+    def validate_lignes(self, lignes):
+        produits = [ligne["produit"].pk for ligne in lignes]
+        if len(produits) != len(set(produits)):
+            raise serializers.ValidationError("Un produit ne peut apparaître qu'une fois dans le même approvisionnement.")
+        return lignes
+
+    @transaction.atomic
+    def create(self, validated_data):
+        lignes = validated_data.pop("lignes")
+        commercant = self.context["request"].user
+        approvisionnement = Approvisionnement.objects.create(commercant=commercant, **validated_data)
+        ids = sorted(ligne["produit"].pk for ligne in lignes)
+        produits = {
+            produit.pk: produit for produit in Produit.objects.select_for_update().filter(
+                commercant=commercant, actif=True, pk__in=ids
+            ).order_by("pk")
+        }
+        if len(produits) != len(ids):
+            raise serializers.ValidationError({"lignes": "Un produit n'appartient plus à cette boutique ou est archivé."})
+
+        for donnees in lignes:
+            produit = produits[donnees["produit"].pk]
+            avant = produit.quantite_stock
+            quantite = donnees["quantite"]
+            cout = donnees["prix_achat_unitaire"]
+            produit.quantite_stock += quantite
+            produit.prix_achat = cout
+            produit.save(update_fields=["quantite_stock", "prix_achat"])
+            ligne = LigneApprovisionnement.objects.create(
+                approvisionnement=approvisionnement, produit=produit,
+                quantite=quantite, prix_achat_unitaire=cout,
+            )
+            MouvementStock.objects.create(
+                commercant=commercant, produit=produit, type=MouvementStock.Type.ACHAT,
+                variation=quantite, quantite_avant=avant, quantite_apres=produit.quantite_stock,
+                note=f"Réception {approvisionnement.reference}".strip(),
+                ligne_approvisionnement=ligne, utilisateur=commercant,
+            )
+        return approvisionnement
+
+
+class MouvementStockSerializer(serializers.ModelSerializer):
+    produit_nom = serializers.CharField(source="produit.nom", read_only=True)
+    utilisateur_email = serializers.EmailField(source="utilisateur.email", read_only=True, allow_null=True)
+    type_libelle = serializers.CharField(source="get_type_display", read_only=True)
+
+    class Meta:
+        model = MouvementStock
+        fields = ["id", "produit", "produit_nom", "type", "type_libelle", "variation", "quantite_avant", "quantite_apres", "note", "utilisateur_email", "date"]
+        read_only_fields = fields
 
 
 class ClientSerializer(serializers.ModelSerializer):
@@ -112,11 +362,12 @@ class VenteSerializer(serializers.ModelSerializer):
     client = serializers.PrimaryKeyRelatedField(queryset=Client.objects.none(), required=False, allow_null=True)
     produit_nom = serializers.CharField(source="produit.nom", read_only=True)
     client_nom = serializers.CharField(source="client.nom", read_only=True, allow_null=True)
+    benefice_brut = serializers.DecimalField(max_digits=14, decimal_places=2, read_only=True, allow_null=True)
 
     class Meta:
         model = Vente
-        fields = ["id", "produit", "produit_nom", "client", "client_nom", "quantite", "prix_unitaire", "total", "date"]
-        read_only_fields = ["id", "prix_unitaire", "total", "date"]
+        fields = ["id", "produit", "produit_nom", "client", "client_nom", "quantite", "prix_unitaire", "prix_achat_unitaire", "benefice_brut", "total", "date"]
+        read_only_fields = ["id", "prix_unitaire", "prix_achat_unitaire", "benefice_brut", "total", "date"]
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -135,17 +386,25 @@ class VenteSerializer(serializers.ModelSerializer):
         if produit.quantite_stock < quantite:
             raise serializers.ValidationError({"quantite": "Stock insuffisant pour cette vente."})
         client = validated_data.get("client")
+        stock_avant = produit.quantite_stock
         produit.quantite_stock -= quantite
         produit.save(update_fields=["quantite_stock"])
         prix_unitaire = produit.prix
-        return Vente.objects.create(
+        vente = Vente.objects.create(
             commercant=commercant,
             produit=produit,
             client=client,
             quantite=quantite,
             prix_unitaire=prix_unitaire,
+            prix_achat_unitaire=produit.prix_achat,
             total=prix_unitaire * quantite,
         )
+        MouvementStock.objects.create(
+            commercant=commercant, produit=produit, type=MouvementStock.Type.VENTE,
+            variation=-quantite, quantite_avant=stock_avant, quantite_apres=produit.quantite_stock,
+            note=f"Vente {vente.pk}", vente=vente, utilisateur=commercant,
+        )
+        return vente
 
 
 class CorrectionDetteSerializer(serializers.ModelSerializer):

@@ -1,6 +1,8 @@
+import { localePourLangue } from "./contexte/LangueContext";
+
 export function formaterFCFA(valeur) {
   const montant = Number(valeur || 0);
-  return `${new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 0 }).format(montant)} FCFA`;
+  return `${new Intl.NumberFormat(localePourLangue(), { maximumFractionDigits: 0 }).format(montant)} FCFA`;
 }
 
 export const FORMAT_TELEPHONE_BENIN = /^\+229[0-9]{8}$/;
@@ -16,5 +18,5 @@ export function extraireListe(reponse) {
 
 export function afficherDate(date) {
   if (!date) return "";
-  return new Intl.DateTimeFormat("fr-FR", { dateStyle: "short", timeStyle: "short" }).format(new Date(date));
+  return new Intl.DateTimeFormat(localePourLangue(), { dateStyle: "short", timeStyle: "short" }).format(new Date(date));
 }

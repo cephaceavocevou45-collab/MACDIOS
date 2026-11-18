@@ -9,10 +9,14 @@ import { Chargement, Erreur } from "../composants/Commun";
 import { useToast } from "../composants/ToastProvider";
 import Pagination from "../composants/Pagination";
 import { extraireListe } from "../utils";
-
-const fcfa = (montant) => `${Number(montant || 0).toLocaleString("fr-FR")} FCFA`;
+import { localePourLangue, TexteLocalise, useLangue } from "../contexte/LangueContext";
 
 export default function Abonnement() {
+  const { langue } = useLangue();
+  const fcfa = (montant) => `${Number(montant || 0).toLocaleString(localePourLangue(langue))} FCFA`;
+  const dateLocale = (valeur, avecHeure = false) => new Intl.DateTimeFormat(
+    localePourLangue(langue), avecHeure ? { dateStyle: "short", timeStyle: "short" } : { dateStyle: "medium" },
+  ).format(new Date(valeur));
   const [abonnement, setAbonnement] = useState(null);
   const [plans, setPlans] = useState([]);
   const [transactions, setTransactions] = useState([]);
@@ -107,47 +111,47 @@ export default function Abonnement() {
   return (
     <div className="page-stack">
       <div className="page-heading-row">
-        <div><span className="eyebrow">Mon compte</span><h1 className="workspace-title">Abonnement</h1><p className="workspace-subtitle">Consultez votre accès et choisissez une formule.</p></div>
+        <div><span className="eyebrow">{<TexteLocalise phrase={"Mon compte"} />}</span><h1 className="workspace-title">{<TexteLocalise phrase={"Abonnement"} />}</h1><p className="workspace-subtitle">{<TexteLocalise phrase={"Consultez votre accès et choisissez une formule."} />}</p></div>
       </div>
       <Erreur texte={erreur}/>
 
       {abonnement && <Card className="subscription-current">
         <div className="flex flex-wrap items-start justify-between gap-4">
-          <div><p className="mb-2 text-sm font-semibold text-ink-muted">Votre formule actuelle</p><h2 className="m-0 text-2xl font-bold">{abonnement.plan.nom}</h2></div>
+          <div><p className="mb-2 text-sm font-semibold text-ink-muted">{<TexteLocalise phrase={"Votre formule actuelle"} />}</p><h2 className="m-0 text-2xl font-bold">{abonnement.plan.nom}</h2></div>
           <Badge tone={abonnement.statut === "actif" ? "green" : abonnement.statut === "essai" ? "orange" : "red"}>{abonnement.statut === "essai" ? "Période d’essai" : abonnement.statut === "actif" ? "Actif" : "Expiré"}</Badge>
         </div>
         <div className="mt-5 grid gap-3 sm:grid-cols-2">
-          <div className="subscription-detail"><Icon name="clock"/><span>Jours restants</span><strong>{abonnement.jours_restants}</strong></div>
-          <div className="subscription-detail"><Icon name="subscription"/><span>Valable jusqu’au</span><strong>{new Date(abonnement.date_fin).toLocaleDateString("fr-FR")}</strong></div>
+          <div className="subscription-detail"><Icon name="clock"/><span>{<TexteLocalise phrase={"Jours restants"} />}</span><strong>{abonnement.jours_restants}</strong></div>
+          <div className="subscription-detail"><Icon name="subscription"/><span>{<TexteLocalise phrase={"Valable jusqu’au"} />}</span><strong>{dateLocale(abonnement.date_fin)}</strong></div>
         </div>
-        {abonnement.statut === "expire" && <p className="mt-4 mb-0 text-sm font-medium text-red-700">Votre espace est en lecture seule jusqu’à la réactivation de l’abonnement.</p>}
+        {abonnement.statut === "expire" && <p className="mt-4 mb-0 text-sm font-medium text-red-700">{<TexteLocalise phrase={"Votre espace est en lecture seule jusqu’à la réactivation de l’abonnement."} />}</p>}
       </Card>}
 
       <section className="page-stack">
-        <div><h2 className="m-0 text-xl font-bold">Choisir une formule</h2><p className="mt-1 text-sm text-ink-muted">Paiement Mobile Money avec vérification par notre équipe.</p></div>
-        {demandeEnAttente && <Card><p className="m-0 text-sm font-semibold text-amber-800">Une demande de paiement est déjà en attente de vérification. Vous pourrez choisir une nouvelle formule après son traitement.</p></Card>}
-        {plans.length === 0 ? <Card><p className="m-0 text-ink-muted">Aucune formule payante n’est disponible pour le moment.</p></Card> :
+        <div><h2 className="m-0 text-xl font-bold">{<TexteLocalise phrase={"Choisir une formule"} />}</h2><p className="mt-1 text-sm text-ink-muted">{<TexteLocalise phrase={"Paiement Mobile Money avec vérification par notre équipe."} />}</p></div>
+        {demandeEnAttente && <Card><p className="m-0 text-sm font-semibold text-amber-800">{<TexteLocalise phrase={"Une demande de paiement est déjà en attente de vérification. Vous pourrez choisir une nouvelle formule après son traitement."} />}</p></Card>}
+        {plans.length === 0 ? <Card><p className="m-0 text-ink-muted">{<TexteLocalise phrase={"Aucune formule payante n’est disponible pour le moment."} />}</p></Card> :
           <div className="grid gap-4 md:grid-cols-2">{plans.map((plan) => <Card key={plan.id} className="subscription-plan">
             <div className="flex items-center justify-between gap-3"><h3 className="m-0 text-lg font-bold">{plan.nom}</h3><Icon name="spark" className="text-brand"/></div>
-            <p className="my-4 text-3xl font-bold tracking-tight">{fcfa(plan.prix)}<span className="ml-1 text-sm font-medium text-ink-muted">/ {plan.duree_jours} jours</span></p>
+            <p className="my-4 text-3xl font-bold tracking-tight">{fcfa(plan.prix)}<span className="ml-1 text-sm font-medium text-ink-muted">/ {plan.duree_jours}{' '}{<TexteLocalise phrase={"jours"} />}</span></p>
             <Button className="w-full" disabled={planEnCours !== null || demandeEnAttente} onClick={() => commencerPaiement(plan)}>
-              <><Icon name="wallet"/>Choisir cette formule</>
+              <><Icon name="wallet"/>{<TexteLocalise phrase={"Choisir cette formule"} />}</>
             </Button>
           </Card>)}</div>}
         <Pagination page={planPage} count={nombrePlans} onChange={setPlanPage}/>
       </section>
 
       {planChoisi && <Card>
-        <h2 className="m-0 text-xl font-bold">Payer {planChoisi.nom} par Mobile Money</h2>
+        <h2 className="m-0 text-xl font-bold">{<TexteLocalise phrase={"Payer"} />}{' '}{planChoisi.nom}{' '}{<TexteLocalise phrase={"par Mobile Money"} />}</h2>
         {!(abonnement.operateurs_paiement || []).length ? <div className="my-4 rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm leading-6 text-amber-950" role="status">
-          <strong>Le paiement Mobile Money n’est pas configuré sur le serveur.</strong>
-          <p className="mb-0 mt-1">Aucun numéro d’opérateur n’a été transmis par le backend. Vérifiez les variables NUMERO_MTN, NUMERO_MOOV ou NUMERO_CELTIIS dans le fichier .env du backend, puis redémarrez Django. Ne faites pas de transfert avant que le numéro du bénéficiaire s’affiche ici.</p>
+          <strong>{<TexteLocalise phrase={"Le paiement Mobile Money n’est pas configuré sur le serveur."} />}</strong>
+          <p className="mb-0 mt-1">{<TexteLocalise phrase={"Aucun numéro d’opérateur n’a été transmis par le backend. Vérifiez les variables NUMERO_MTN, NUMERO_MOOV ou NUMERO_CELTIIS dans le fichier .env du backend, puis redémarrez Django. Ne faites pas de transfert avant que le numéro du bénéficiaire s’affiche ici."} />}</p>
         </div> : <>
         <div className="my-4 rounded-xl bg-brand/5 p-4 text-base leading-7">
-          <p className="m-0">1. Choisissez l’opérateur utilisé pour votre transfert. Le numéro s’affichera après votre choix.</p>
+          <p className="m-0">{<TexteLocalise phrase={"1. Choisissez l’opérateur utilisé pour votre transfert. Le numéro s’affichera après votre choix."} />}</p>
         </div>
         <fieldset className="mb-4 grid gap-3 border-0 p-0 sm:grid-cols-3">
-          <legend className="mb-2 text-sm font-semibold">Votre opérateur Mobile Money</legend>
+          <legend className="mb-2 text-sm font-semibold">{<TexteLocalise phrase={"Votre opérateur Mobile Money"} />}</legend>
           {(abonnement.operateurs_paiement || []).map((operateur) => <label key={operateur.code} className={`cursor-pointer rounded-xl border p-4 ${operateurChoisi === operateur.code ? "border-brand bg-brand/5" : "border-line bg-white"}`}>
             <span className="flex items-center gap-2 font-bold"><input type="radio" name="operateur" value={operateur.code} checked={operateurChoisi === operateur.code} onChange={() => setOperateurChoisi(operateur.code)}/>{operateur.nom}</span>
           </label>)}
@@ -156,47 +160,45 @@ export default function Abonnement() {
           const operateur = abonnement.operateurs_paiement.find((item) => item.code === operateurChoisi);
           return operateur ? <>
             <div className="my-4 rounded-xl bg-brand/5 p-4 text-base leading-7">
-              <p className="m-0">2. Transférez exactement <strong>{fcfa(planChoisi.prix)}</strong> via {operateur.nom} au numéro :</p>
+              <p className="m-0">{<TexteLocalise phrase={"2. Transférez exactement"} />}{' '}<strong>{fcfa(planChoisi.prix)}</strong>{' '}{<TexteLocalise phrase={"via"} />}{' '}{operateur.nom}{' '}{<TexteLocalise phrase={"au numéro :"} />}</p>
               <p className="my-2 text-2xl font-bold tracking-wide">{operateur.numero}</p>
-              <p className="m-0">3. Recopiez la référence reçue par SMS. Vous pourrez joindre une capture d’écran du transfert.</p>
+              <p className="m-0">{<TexteLocalise phrase={"3. Recopiez la référence reçue par SMS. Vous pourrez joindre une capture d’écran du transfert."} />}</p>
             </div>
             <form className="grid gap-4" onSubmit={envoyerDemande}>
-              <label className="grid gap-2 text-sm font-semibold">Référence du transfert
-                <input className="field-control" value={referenceManuelle} onChange={(event) => setReferenceManuelle(event.target.value)} required maxLength={120} />
+              <label className="grid gap-2 text-sm font-semibold">{<TexteLocalise phrase={"Référence du transfert"} />}<input className="field-control" value={referenceManuelle} onChange={(event) => setReferenceManuelle(event.target.value)} required maxLength={120} />
               </label>
-              <label className="grid gap-2 text-sm font-semibold">Capture d’écran (facultative, 5 Mo maximum)
-                <input className="field-control" type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => setPreuve(event.target.files?.[0] || null)} />
+              <label className="grid gap-2 text-sm font-semibold">{<TexteLocalise phrase={"Capture d’écran (facultative, 5 Mo maximum)"} />}<input className="field-control" type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => setPreuve(event.target.files?.[0] || null)} />
               </label>
-              <div className="flex flex-wrap gap-3"><Button type="submit" disabled={planEnCours !== null || !operateurChoisi}>{planEnCours ? "Envoi…" : "J’ai payé"}</Button><Button type="button" variant="secondary" onClick={() => { setPlanChoisi(null); setOperateurChoisi(""); }}>Annuler</Button></div>
+              <div className="flex flex-wrap gap-3"><Button type="submit" disabled={planEnCours !== null || !operateurChoisi}>{planEnCours ? "Envoi…" : "J’ai payé"}</Button><Button type="button" variant="secondary" onClick={() => { setPlanChoisi(null); setOperateurChoisi(""); }}>{<TexteLocalise phrase={"Annuler"} />}</Button></div>
             </form>
           </> : null;
         })()}
         </>}
       </Card>}
       {demandes.length > 0 && <section className="page-stack">
-        <div><h2 className="m-0 text-xl font-bold">Mes demandes de paiement</h2><p className="mt-1 text-sm text-ink-muted">Une demande en attente bloque un nouvel envoi.</p></div>
+        <div><h2 className="m-0 text-xl font-bold">{<TexteLocalise phrase={"Mes demandes de paiement"} />}</h2><p className="mt-1 text-sm text-ink-muted">{<TexteLocalise phrase={"Une demande en attente bloque un nouvel envoi."} />}</p></div>
         {demandes.map((demande) => <Card key={demande.id} className="grid gap-3 sm:grid-cols-[1fr_auto] sm:items-center">
-          <div><strong>{demande.plan_nom} · {fcfa(demande.montant)}</strong><p className="m-0 mt-1 text-sm text-ink-muted">{demande.operateur_nom || demande.operateur || "Opérateur non renseigné"} · Demande du {new Date(demande.date_demande).toLocaleString("fr-FR")}</p>
-            {demande.statut === "en_attente" && <p className="m-0 mt-2 font-semibold text-amber-700">En attente de vérification. Vous serez notifié dès que votre paiement sera validé.</p>}
-            {demande.statut === "rejetee" && <p className="m-0 mt-2 text-red-700">Demande rejetée : {demande.motif_rejet}</p>}
-            {demande.statut === "validee" && <p className="m-0 mt-2 font-semibold text-emerald-700">Paiement vérifié, votre abonnement est actif jusqu’au {new Date(abonnement.date_fin).toLocaleDateString("fr-FR")}.</p>}
+          <div><strong>{demande.plan_nom} · {fcfa(demande.montant)}</strong><p className="m-0 mt-1 text-sm text-ink-muted">{demande.operateur_nom || demande.operateur || <TexteLocalise phrase={"Opérateur non renseigné"}/>}{' '}{<TexteLocalise phrase={"· Demande du"} />}{' '}{dateLocale(demande.date_demande, true)}</p>
+            {demande.statut === "en_attente" && <p className="m-0 mt-2 font-semibold text-amber-700">{<TexteLocalise phrase={"En attente de vérification. Vous serez notifié dès que votre paiement sera validé."} />}</p>}
+            {demande.statut === "rejetee" && <p className="m-0 mt-2 text-red-700">{<TexteLocalise phrase={"Demande rejetée :"} />}{' '}{demande.motif_rejet}</p>}
+            {demande.statut === "validee" && <p className="m-0 mt-2 font-semibold text-emerald-700">{<TexteLocalise phrase={"Paiement vérifié, votre abonnement est actif jusqu’au"} />}{' '}{dateLocale(abonnement.date_fin)}.</p>}
           </div>
-          <div className="flex items-center gap-3"><Badge tone={demande.statut === "validee" ? "green" : demande.statut === "rejetee" ? "red" : "orange"}>{demande.statut === "validee" ? "Validée" : demande.statut === "rejetee" ? "Rejetée" : "En attente"}</Badge>{demande.statut === "validee" && <Button onClick={() => telechargerRecu(demande)}>Télécharger le reçu (PDF)</Button>}</div>
+          <div className="flex items-center gap-3"><Badge tone={demande.statut === "validee" ? "green" : demande.statut === "rejetee" ? "red" : "orange"}>{demande.statut === "validee" ? "Validée" : demande.statut === "rejetee" ? "Rejetée" : "En attente"}</Badge>{demande.statut === "validee" && <Button onClick={() => telechargerRecu(demande)}>{<TexteLocalise phrase={"Télécharger le reçu (PDF)"} />}</Button>}</div>
         </Card>)}
         <Pagination page={demandePage} count={nombreDemandes} onChange={setDemandePage}/>
       </section>}
 
       <section className="page-stack">
-        <div><h2 className="m-0 text-xl font-bold">Historique des paiements</h2><p className="mt-1 text-sm text-ink-muted">État des paiements liés à votre compte.</p></div>
-        {transactions.length === 0 ? <Card><p className="m-0 text-ink-muted">Aucun paiement enregistré.</p></Card> :
+        <div><h2 className="m-0 text-xl font-bold">{<TexteLocalise phrase={"Historique des paiements"} />}</h2><p className="mt-1 text-sm text-ink-muted">{<TexteLocalise phrase={"État des paiements liés à votre compte."} />}</p></div>
+        {transactions.length === 0 ? <Card><p className="m-0 text-ink-muted">{<TexteLocalise phrase={"Aucun paiement enregistré."} />}</p></Card> :
           <div className="grid gap-3">{transactions.map((transaction) => <Card key={transaction.reference} className="subscription-history-row">
-            <div><strong>{transaction.plan_nom}</strong><small>{new Date(transaction.date_creation).toLocaleString("fr-FR")}</small></div>
+            <div><strong>{transaction.plan_nom}</strong><small>{dateLocale(transaction.date_creation, true)}</small></div>
             <strong>{fcfa(transaction.montant)}</strong>
             <Badge tone={transaction.statut === "reussi" ? "green" : transaction.statut === "echoue" ? "red" : "orange"}>{transaction.statut === "reussi" ? "Réussi" : transaction.statut === "echoue" ? "Échoué" : "En attente"}</Badge>
           </Card>)}</div>}
         <Pagination page={transactionPage} count={nombreTransactions} onChange={setTransactionPage}/>
       </section>
-      <Link className="btn-ghost w-fit" to="/tableau-de-bord"><Icon name="arrow"/>Retour au tableau de bord</Link>
+      <Link className="btn-ghost w-fit" to="/tableau-de-bord"><Icon name="arrow"/>{<TexteLocalise phrase={"Retour au tableau de bord"} />}</Link>
     </div>
   );
 }

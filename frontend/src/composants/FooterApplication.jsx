@@ -1,5 +1,6 @@
 import { Link, useLocation } from "react-router-dom";
 import { branding } from "../config/branding";
+import { SelecteurLangue, TexteLocalise, traduire } from "../contexte/LangueContext";
 
 const nomsReseaux = {
   facebook: "Facebook",
@@ -23,24 +24,36 @@ function IcôneRéseau({ name }) {
   return <svg aria-hidden="true" viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">{formes[name]}</svg>;
 }
 
-export default function FooterApplication() {
+export default function FooterApplication({ compact = false }) {
   const { pathname } = useLocation();
   const ancreAccueil = (id) => pathname === "/" ? `#${id}` : `/#${id}`;
   const réseauxConfigurés = Object.entries(branding.socials).filter(([, url]) => Boolean(url?.trim()));
+
+  if (compact) return <footer className="public-footer application-footer-compact" id="contact">
+    <div className="public-container application-footer-compact-inner">
+      <Link className="brand-lockup brand-light application-footer-brand" to="/"><span className="brand-mark">{branding.logoMark}</span>{branding.appName}</Link>
+      <nav className="application-footer-links" aria-label={traduire("Liens utiles")}>
+        <Link to="/contact" state={{ retourVers: pathname }}>{<TexteLocalise phrase={"Contactez-nous"} />}</Link>
+        <Link to="/conditions" state={{ retourVers: pathname }}>{<TexteLocalise phrase={"Conditions d’utilisation"} />}</Link>
+        <Link to="/confidentialite" state={{ retourVers: pathname }}>{<TexteLocalise phrase={"Confidentialité"} />}</Link>
+      </nav>
+      <span className="application-footer-copyright">© {new Date().getFullYear()} {branding.appName}</span>
+    </div>
+  </footer>;
 
   return <footer className="public-footer" id="contact">
     <div className="public-container">
       <div className="footer-grid">
         <div className="footer-brand">
           <Link className="brand-lockup brand-light" to="/"><span className="brand-mark">{branding.logoMark}</span>{branding.appName}</Link>
-          <p>{branding.appDescription} Un outil simple pour mieux suivre les ventes, les produits et les clients.</p>
+          <p>{branding.appDescription}{' '}{<TexteLocalise phrase={"Un outil simple pour mieux suivre les ventes, les produits et les clients."} />}</p>
           {réseauxConfigurés.length > 0 && <div className="social-links">{réseauxConfigurés.map(([réseau, url]) => <a key={réseau} className="social-link" href={url} target="_blank" rel="noreferrer" aria-label={nomsReseaux[réseau]}><IcôneRéseau name={réseau}/></a>)}</div>}
         </div>
-        <div className="footer-column"><h3>Découvrir</h3><a href={ancreAccueil("fonctionnalites")}>Fonctionnalités</a><a href={ancreAccueil("comment-ca-marche")}>Comment ça marche</a><a href={ancreAccueil("tarifs")}>Tarifs</a><Link to="/inscription">Créer un compte</Link></div>
-        <div className="footer-column"><h3>Votre espace</h3><Link to="/connexion">Se connecter</Link><a href={ancreAccueil("faq")}>Questions fréquentes</a><Link to="/conditions">Conditions d’utilisation</Link><Link to="/confidentialite">Confidentialité</Link></div>
-        <div className="footer-column"><h3>Nous contacter</h3>{branding.contact.email && <a href={`mailto:${branding.contact.email}`}>{branding.contact.email}</a>}{branding.contact.telephone && <a href={`tel:${branding.contact.telephone.replace(/[^+\d]/g, "")}`}>{branding.contact.telephone}</a>}{branding.contact.whatsapp && <a href={branding.contact.whatsapp} target="_blank" rel="noreferrer">Écrire sur WhatsApp</a>}</div>
+        <nav className="footer-column" aria-label={traduire("Solution")}><h3>{<TexteLocalise phrase={"Solution"} />}</h3><a href={ancreAccueil("fonctionnalites")}>{<TexteLocalise phrase={"Fonctionnalités"} />}</a><a href={ancreAccueil("comment-ca-marche")}>{<TexteLocalise phrase={"Comment ça marche"} />}</a><a href={ancreAccueil("tarifs")}>{<TexteLocalise phrase={"Tarifs"} />}</a><Link to="/inscription">{<TexteLocalise phrase={"Créer un compte"} />}</Link></nav>
+        <div className="footer-column"><h3>{<TexteLocalise phrase={"Entreprise"} />}</h3><Link to="/contact" state={{ retourVers: pathname }}>{<TexteLocalise phrase={"Contactez-nous"} />}</Link><Link to="/connexion">{<TexteLocalise phrase={"Se connecter"} />}</Link><a href={ancreAccueil("faq")}>{<TexteLocalise phrase={"Questions fréquentes"} />}</a></div>
+        <nav className="footer-column" aria-label={traduire("Informations légales")}><h3>{<TexteLocalise phrase={"Légal"} />}</h3><Link to="/conditions" state={{ retourVers: pathname }}>{<TexteLocalise phrase={"Conditions d’utilisation"} />}</Link><Link to="/confidentialite" state={{ retourVers: pathname }}>{<TexteLocalise phrase={"Confidentialité"} />}</Link></nav>
       </div>
-      <div className="footer-bottom"><span>© {new Date().getFullYear()} {branding.appName}. Tous droits réservés.</span><div className="footer-legal"><Link to="/conditions">Conditions</Link><Link to="/confidentialite">Confidentialité</Link></div></div>
+      <div className="footer-bottom"><span>© {new Date().getFullYear()} {branding.appName}{<TexteLocalise phrase={". Tous droits réservés."} />}</span><SelecteurLangue compact/></div>
     </div>
   </footer>;
 }

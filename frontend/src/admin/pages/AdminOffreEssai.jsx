@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { adminApi, erreurAdmin } from "../adminApi";
 import { AdminBadge, AdminErreur, AdminTitre, formatDate } from "../AdminComponents";
+import { TexteLocalise, traduire } from "../../contexte/LangueContext";
 
 export default function AdminOffreEssai() {
   const [actif, setActif] = useState(true);
@@ -32,13 +33,13 @@ export default function AdminOffreEssai() {
   return <>
     <AdminTitre titre="Offre d’essai gratuite" description="Modifiez la durée de l’essai ou désactivez-le pour les nouvelles inscriptions."/>
     <AdminErreur>{erreur}</AdminErreur>
-    {chargement ? <div className="admin-loading" aria-label="Chargement"><i/><i/><i/></div> : <div className="admin-panel admin-trial-panel">
-      <div className="admin-trial-status"><span>État actuel</span><AdminBadge tone={actif ? "green" : "red"}>{actif ? "Essai proposé" : "Essai désactivé"}</AdminBadge></div>
+    {chargement ? <div className="admin-loading" aria-label={traduire("Chargement")}><i/><i/><i/></div> : <div className="admin-panel admin-trial-panel">
+      <div className="admin-trial-status"><span>{<TexteLocalise phrase={"État actuel"} />}</span><AdminBadge tone={actif ? "green" : "red"}>{actif ? "Essai proposé" : "Essai désactivé"}</AdminBadge></div>
       <form className="admin-form" onSubmit={enregistrer}>
-        <label className="admin-toggle-row"><span><strong>Proposer l’essai gratuit</strong><small>Ce réglage s’applique aux nouveaux comptes. Les essais déjà attribués ne changent pas.</small></span><input type="checkbox" checked={actif} onChange={(event) => setActif(event.target.checked)}/></label>
-        <label>Durée de l’essai, en jours<input type="number" min="1" max="365" required value={duree} onChange={(event) => setDuree(event.target.value)} disabled={!actif}/><small>Choisissez une durée entre 1 et 365 jours.</small></label>
+        <label className="admin-toggle-row"><span><strong>{<TexteLocalise phrase={"Proposer l’essai gratuit"} />}</strong><small>{<TexteLocalise phrase={"Ce réglage s’applique aux nouveaux comptes. Les essais déjà attribués ne changent pas."} />}</small></span><input type="checkbox" checked={actif} onChange={(event) => setActif(event.target.checked)}/></label>
+        <label>{<TexteLocalise phrase={"Durée de l’essai, en jours"} />}<input type="number" min="1" max="365" required value={duree} onChange={(event) => setDuree(event.target.value)} disabled={!actif}/><small>{<TexteLocalise phrase={"Choisissez une durée entre 1 et 365 jours."} />}</small></label>
         {succes && <p className="admin-success" role="status">{succes}</p>}
-        {modifieLe && <p className="admin-hint">Dernière modification : {formatDate(modifieLe, true)}</p>}
+        {modifieLe && <p className="admin-hint">{<TexteLocalise phrase={"Dernière modification :"} />}{' '}{formatDate(modifieLe, true)}</p>}
         <button className="admin-button admin-button-primary" disabled={enCours}>{enCours ? "Enregistrement…" : "Enregistrer les réglages"}</button>
       </form>
     </div>}

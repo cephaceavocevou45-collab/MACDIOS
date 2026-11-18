@@ -4,7 +4,7 @@ from rest_framework import serializers
 from drf_spectacular.utils import extend_schema_field
 from django.utils import timezone
 
-from .models import Commercant, ConfigurationEssai, DemandePaiementManuel, JournalAudit, ProfilSousAdmin
+from .models import Commercant, ConfigurationEssai, DemandePaiementManuel, JournalAudit, ModeMaintenance, ProfilSousAdmin
 
 
 class ConfigurationEssaiSerializer(serializers.ModelSerializer):
@@ -16,6 +16,19 @@ class ConfigurationEssaiSerializer(serializers.ModelSerializer):
     def validate_duree_jours(self, valeur):
         if not 1 <= valeur <= 365:
             raise serializers.ValidationError("La durée doit être comprise entre 1 et 365 jours.")
+        return valeur
+
+
+class ModeMaintenanceSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ModeMaintenance
+        fields = ["actif", "message", "modifie_le"]
+        read_only_fields = ["modifie_le"]
+
+    def validate_message(self, valeur):
+        valeur = valeur.strip()
+        if not valeur:
+            raise serializers.ValidationError("Le message de maintenance ne peut pas être vide.")
         return valeur
 
 

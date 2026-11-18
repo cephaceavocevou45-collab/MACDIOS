@@ -98,3 +98,126 @@ jobs:
         run: npm audit --audit-level=high
       - name: Compiler le frontend
         run: npm run build
+
+  deploy-production:
+    name: Déploiement production après CI
+    needs: [backend, frontend]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.PRODUCTION_DEPLOY_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    concurrency:
+      group: deploiement-production
+      cancel-in-progress: false
+    steps:
+      - name: Récupérer le dépôt
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Vérifier les secrets de déploiement
+        env:
+          DEPLOYMENT_MAINTENANCE_TOKEN: ${{ secrets.DEPLOYMENT_MAINTENANCE_TOKEN }}
+          RENDER_DEPLOY_HOOK_URL: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
+          VERCEL_DEPLOY_HOOK_URL: ${{ secrets.VERCEL_DEPLOY_HOOK_URL }}
+        run: |
+          set -euo pipefail
+          test -n "$DEPLOYMENT_MAINTENANCE_TOKEN" || { echo "Secret GitHub manquant : DEPLOYMENT_MAINTENANCE_TOKEN"; exit 1; }
+          test "${#DEPLOYMENT_MAINTENANCE_TOKEN}" -ge 32 || { echo "DEPLOYMENT_MAINTENANCE_TOKEN doit contenir au moins 32 caractères."; exit 1; }
+          test -n "$RENDER_DEPLOY_HOOK_URL" || { echo "Secret GitHub manquant : RENDER_DEPLOY_HOOK_URL"; exit 1; }
+          test -n "$VERCEL_DEPLOY_HOOK_URL" || { echo "Secret GitHub manquant : VERCEL_DEPLOY_HOOK_URL"; exit 1; }
+
+      - name: Refuser un déploiement dépassé par un commit plus récent
+        run: |
+          set -euo pipefail
+          sha_actuel="$(git ls-remote origin refs/heads/main | cut -f1)"
+          if [ "$sha_actuel" != "$GITHUB_SHA" ]; then
+            echo "Le commit testé n'est plus la tête de main ; aucun déploiement ne sera lancé."
+            exit 1
+          fi
+
+      - name: Activer la maintenance et mémoriser l'état précédent
+        id: maintenance
+        env:
+          DEPLOYMENT_MAINTENANCE_TOKEN: ${{ secrets.DEPLOYMENT_MAINTENANCE_TOKEN }}
+          API_PRODUCTION: https://gestions-commer-ants.onrender.com
+        run: |
+          set -euo pipefail
+          reponse="$(curl --silent --show-error --fail --max-time 30 \
+            -H "Authorization: Bearer $DEPLOYMENT_MAINTENANCE_TOKEN" \
+            -H "Content-Type: application/json" \
+            -X POST "$API_PRODUCTION/api/deploiement/maintenance/" \
+            --data '{"action":"activer"}')"
+          etat_precedent="$(jq -c '.etat_precedent' <<< "$reponse")"
+          test "$etat_precedent" != "null"
+          echo "etat_precedent=$etat_precedent" >> "$GITHUB_OUTPUT"
+
+      - name: Déployer le commit testé sur Render
+        env:
+          RENDER_DEPLOY_HOOK_URL: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
+        run: |
+          set -euo pipefail
+          separateur='?'
+          if [[ "$RENDER_DEPLOY_HOOK_URL" == *\?* ]]; then separateur='&'; fi
+          # Render accepte un SHA précis via ref et désactive alors l'auto-déploiement.
+          curl --silent --show-error --fail --max-time 30 --output /dev/null \
+            --request POST "${RENDER_DEPLOY_HOOK_URL}${separateur}ref=${GITHUB_SHA}"
+
+      - name: Déclencher la production Vercel
+        env:
+          VERCEL_DEPLOY_HOOK_URL: ${{ secrets.VERCEL_DEPLOY_HOOK_URL }}
+        run: |
+          set -euo pipefail
+          # L'URL du hook est un secret : ne pas afficher son contenu dans les logs.
+          curl --silent --show-error --fail --max-time 30 --output /dev/null \
+            --request POST "$VERCEL_DEPLOY_HOOK_URL"
+
+      - name: Attendre la présence du commit sur les deux plateformes
+        env:
+          API_PRODUCTION: https://gestions-commer-ants.onrender.com
+          FRONTEND_PRODUCTION: https://gestions-commer-ants.vercel.app
+        run: |
+          set -euo pipefail
+          backend_ok=false
+          frontend_ok=false
+          for tentative in $(seq 1 90); do
+            if [ "$backend_ok" != true ]; then
+              sha_backend="$(curl --silent --show-error --fail --max-time 20 "$API_PRODUCTION/api/version/" | jq -r '.commit // ""' || true)"
+              if [ "$sha_backend" = "$GITHUB_SHA" ]; then backend_ok=true; fi
+            fi
+            if [ "$frontend_ok" != true ]; then
+              sha_frontend="$(curl --silent --show-error --fail --max-time 20 "$FRONTEND_PRODUCTION/version.json" | jq -r '.commit // ""' || true)"
+              if [ "$sha_frontend" = "$GITHUB_SHA" ]; then frontend_ok=true; fi
+            fi
+            if [ "$backend_ok" = true ] && [ "$frontend_ok" = true ]; then
+              echo "Le backend et le frontend servent le commit testé $GITHUB_SHA."
+              exit 0
+            fi
+            echo "Déploiement en cours (tentative $tentative/90)."
+            sleep 20
+          done
+          echo "Le commit attendu n'a pas été confirmé sur les deux plateformes. La maintenance reste active pour permettre une vérification manuelle."
+          exit 1
+
+      - name: Vérifier les réponses HTTP de production
+        env:
+          API_PRODUCTION: https://gestions-commer-ants.onrender.com
+          FRONTEND_PRODUCTION: https://gestions-commer-ants.vercel.app
+        run: |
+          set -euo pipefail
+          curl --silent --show-error --fail --retry 5 --retry-delay 10 --max-time 30 "$API_PRODUCTION/api/sante/" >/dev/null
+          curl --silent --show-error --fail --retry 5 --retry-delay 10 --max-time 30 "$FRONTEND_PRODUCTION/" >/dev/null
+
+      - name: Restaurer l'état de maintenance précédent
+        if: success() && steps.maintenance.outputs.etat_precedent != ''
+        env:
+          DEPLOYMENT_MAINTENANCE_TOKEN: ${{ secrets.DEPLOYMENT_MAINTENANCE_TOKEN }}
+          API_PRODUCTION: https://gestions-commer-ants.onrender.com
+          ETAT_PRECEDENT: ${{ steps.maintenance.outputs.etat_precedent }}
+        run: |
+          set -euo pipefail
+          jq -cn --argjson etat "$ETAT_PRECEDENT" '{action:"restaurer",etat_precedent:$etat}' |
+            curl --silent --show-error --fail --max-time 30 \
+              -H "Authorization: Bearer $DEPLOYMENT_MAINTENANCE_TOKEN" \
+              -H "Content-Type: application/json" \
+              -X POST "$API_PRODUCTION/api/deploiement/maintenance/" \
+              --data-binary @- >/dev/null

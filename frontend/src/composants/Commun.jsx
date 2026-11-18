@@ -1,13 +1,18 @@
+import { traduire, useLangue } from "../contexte/LangueContext";
+
 export function Chargement({ texte = "Chargement…" }) {
-  return <p className="py-8 text-center text-lg text-gray-600" role="status">{texte}</p>;
+  const { langue } = useLangue();
+  return <p className="py-8 text-center text-lg text-gray-600" role="status">{traduire(texte, langue)}</p>;
 }
 
 export function Erreur({ texte }) {
-  return texte ? <p className="rounded-xl bg-red-50 p-4 font-medium text-red-800" role="alert">{texte}</p> : null;
+  const { langue } = useLangue();
+  return texte ? <p className="rounded-xl bg-red-50 p-4 font-medium text-red-800" role="alert">{traduire(texte, langue)}</p> : null;
 }
 
 export function Succes({ texte }) {
-  return texte ? <p className="rounded-xl bg-green-50 p-4 font-medium text-green-800" role="status">{texte}</p> : null;
+  const { langue } = useLangue();
+  return texte ? <p className="rounded-xl bg-green-50 p-4 font-medium text-green-800" role="status">{traduire(texte, langue)}</p> : null;
 }
 
 export function Champ({ label, className = "", ...props }) {

@@ -1,6 +1,7 @@
-import { Link } from "react-router-dom";
 import Card from "../composants/Card";
 import { branding } from "../config/branding";
+import { TexteLocalise, traduire, useLangue } from "../contexte/LangueContext";
+import RetourPage from "../composants/RetourPage";
 
 const pages = {
   conditions: {
@@ -27,13 +28,18 @@ const pages = {
 };
 
 export default function PageLegale({ type }) {
+  const { langue } = useLangue();
   const page = pages[type];
+  const localiserTexteJuridique = (texte) => traduire(
+    texte.replaceAll(branding.appName, "{app}").replaceAll(branding.contact.telephone, "{telephone}"),
+    langue,
+  ).replaceAll("{app}", branding.appName).replaceAll("{telephone}", branding.contact.telephone);
   return <main className="legal-page mx-auto w-full max-w-3xl flex-1 px-4 py-8 sm:px-6 sm:py-12">
-    <Link className="btn-ghost mb-5" to="/">← Retour à l’accueil</Link>
-    <span className="form-eyebrow">{branding.appName} · Document juridique</span>
-    <h1 className="mt-2 text-3xl font-bold">{page.titre}</h1>
-    <div role="alert" className="my-6 rounded-xl border border-amber-300 bg-amber-50 p-4 font-bold text-amber-900">MODÈLE À FAIRE VALIDER PAR UN JURISTE</div>
-    <div className="grid gap-4">{page.sections.map(([titre, texte]) => <Card key={titre}><h2 className="mb-2 mt-0 text-lg font-bold">{titre}</h2><p className="m-0 leading-7 text-ink-muted">{texte}</p></Card>)}</div>
-    <p className="mt-6 text-sm text-ink-muted">Modèle de travail sans date d’entrée en vigueur. Les informations de l’entité et les obligations applicables doivent être confirmées avant publication.</p>
+    <RetourPage />
+    <span className="form-eyebrow">{branding.appName}{' '}{<TexteLocalise phrase={"· Document juridique"} />}</span>
+    <h1 className="mt-2 text-3xl font-bold">{traduire(page.titre, langue)}</h1>
+    <div role="alert" className="my-6 rounded-xl border border-amber-300 bg-amber-50 p-4 font-bold text-amber-900">{<TexteLocalise phrase={"MODÈLE À FAIRE VALIDER PAR UN JURISTE"} />}</div>
+    <div className="grid gap-4">{page.sections.map(([titre, texte]) => <Card key={titre}><h2 className="mb-2 mt-0 text-lg font-bold">{traduire(titre, langue)}</h2><p className="m-0 leading-7 text-ink-muted">{localiserTexteJuridique(texte)}</p></Card>)}</div>
+    <p className="mt-6 text-sm text-ink-muted">{<TexteLocalise phrase={"Modèle de travail sans date d’entrée en vigueur. Les informations de l’entité et les obligations applicables doivent être confirmées avant publication."} />}</p>
   </main>;
 }

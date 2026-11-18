@@ -46,6 +46,15 @@ class SessionReponseSerializer(serializers.Serializer):
     commercant = serializers.JSONField(allow_null=True)
 
 
+class ProfilReponseSerializer(serializers.Serializer):
+    nom_affiche = serializers.CharField()
+    email = serializers.EmailField()
+    telephone = serializers.CharField(allow_blank=True)
+    adresse = serializers.CharField(allow_blank=True)
+    ville = serializers.CharField(allow_blank=True)
+    logo_url = serializers.URLField(allow_null=True)
+
+
 class ConfirmationSuppressionSerializer(serializers.Serializer):
     mot_de_passe = serializers.CharField(write_only=True)
 
@@ -71,7 +80,7 @@ EXEMPLE_NON_AUTORISE = OpenApiResponse(
 
 EXEMPLE_PRODUIT = OpenApiExample(
     "Produit courant",
-    value={"id": 1, "nom": "Riz", "prix": "1000.00", "quantite_stock": 18, "seuil_alerte": 5, "date_creation": "2026-09-28T12:00:00Z"},
+    value={"id": 1, "nom": "Riz", "prix": "1000.00", "prix_achat": "700.00", "quantite_stock": 18, "seuil_alerte": 5, "date_creation": "2026-09-28T12:00:00Z"},
     response_only=True,
 )
 EXEMPLE_CLIENT = OpenApiExample(
@@ -81,6 +90,6 @@ EXEMPLE_CLIENT = OpenApiExample(
 )
 EXEMPLE_VENTE = OpenApiExample(
     "Vente enregistrée",
-    value={"id": 42, "produit": 1, "client": 1, "quantite": 2, "prix_unitaire": "1000.00", "total": "2000.00", "date": "2026-09-28T12:00:00Z"},
+    value={"id": 42, "produit": 1, "client": 1, "quantite": 2, "prix_unitaire": "1000.00", "prix_achat_unitaire": "700.00", "benefice_brut": "600.00", "total": "2000.00", "date": "2026-09-28T12:00:00Z"},
     response_only=True,
 )

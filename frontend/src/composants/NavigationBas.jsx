@@ -1,5 +1,6 @@
 import { NavLink } from "react-router-dom";
 import Icon from "./Icon";
+import { traduire } from "../contexte/LangueContext";
 
 const liens = [
   { to: "/tableau-de-bord", label: "Accueil", icon: "home", end: true },
@@ -9,5 +10,5 @@ const liens = [
 ];
 
 export default function NavigationBas() {
-  return <nav className="mobile-nav" aria-label="Navigation principale">{liens.map((lien) => <NavLink key={lien.to} to={lien.to} end={lien.end} className={({isActive}) => isActive ? "active" : ""}><Icon name={lien.icon}/>{lien.label}</NavLink>)}</nav>;
+  return <nav className="mobile-nav" aria-label={traduire("Navigation principale")}>{liens.map((lien) => <NavLink key={lien.to} to={lien.to} end={lien.end} className={({isActive}) => isActive ? "active" : ""}><Icon name={lien.icon}/>{lien.label}</NavLink>)}</nav>;
 }

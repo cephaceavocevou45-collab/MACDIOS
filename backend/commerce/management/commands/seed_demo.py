@@ -50,11 +50,14 @@ class Command(BaseCommand):
         )
 
         produits = {}
-        for nom, prix, stock in (("Riz", "1000.00", 40), ("Huile", "1500.00", 25), ("Savon", "500.00", 30)):
+        for nom, prix, prix_achat, stock in (("Riz", "1000.00", "700.00", 40), ("Huile", "1500.00", "1100.00", 25), ("Savon", "500.00", "300.00", 30)):
             produit, _ = Produit.objects.get_or_create(
                 commercant=commercant, nom=nom,
-                defaults={"prix": Decimal(prix), "quantite_stock": stock},
+                defaults={"prix": Decimal(prix), "prix_achat": Decimal(prix_achat), "quantite_stock": stock},
             )
+            if produit.prix_achat is None:
+                produit.prix_achat = Decimal(prix_achat)
+                produit.save(update_fields=["prix_achat"])
             produits[nom] = produit
 
         clients = {}
@@ -74,7 +77,8 @@ class Command(BaseCommand):
                 produit.save(update_fields=["quantite_stock"])
                 Vente.objects.create(
                     commercant=commercant, produit=produit, client=clients["Awa Demo"],
-                    quantite=quantite, prix_unitaire=produit.prix, total=produit.prix * quantite,
+                    quantite=quantite, prix_unitaire=produit.prix, prix_achat_unitaire=produit.prix_achat,
+                    total=produit.prix * quantite,
                 )
 
         if not Dette.objects.filter(commercant=commercant, client=clients["Awa Demo"], note="Exemple de dette", date__date=aujourd_hui).exists():

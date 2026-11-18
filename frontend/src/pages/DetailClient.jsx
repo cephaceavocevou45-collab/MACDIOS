@@ -11,6 +11,7 @@ import { SkeletonCard } from "../composants/Skeleton";
 import { useToast } from "../composants/ToastProvider";
 import Pagination from "../composants/Pagination";
 import { afficherDate, formaterFCFA } from "../utils";
+import { TexteLocalise, traduire } from "../contexte/LangueContext";
 
 export default function DetailClient() {
   const { id } = useParams();
@@ -82,34 +83,34 @@ export default function DetailClient() {
     finally { setPdfEnCours(null); }
   }
 
-  if (chargement) return <><div className="page-heading"><div><h1>Fiche client</h1></div></div><SkeletonCard/></>;
-  if (!client) return <><Link to="/clients" className="btn-ghost mb-4">← Retour aux clients</Link><div className="alert-box">{erreur || "Client introuvable."}</div></>;
+  if (chargement) return <><div className="page-heading"><div><h1>{<TexteLocalise phrase={"Fiche client"} />}</h1></div></div><SkeletonCard/></>;
+  if (!client) return <><Link to="/clients" className="btn-ghost mb-4">{<TexteLocalise phrase={"← Retour aux clients"} />}</Link><div className="alert-box">{erreur || "Client introuvable."}</div></>;
   const solde = Number(client.solde || 0);
 
   return <>
-    <div className="page-heading"><div><Link to="/clients" className="back-link">← Tous les clients</Link><div className="client-detail-title"><span className="client-avatar client-avatar-large">{client.nom?.trim()?.charAt(0)?.toUpperCase() || "C"}</span><div><h1>{client.nom}</h1><p>{client.telephone || "Aucun téléphone renseigné"}</p></div></div></div><div className="flex flex-wrap gap-2"><Badge tone={solde > 0 ? "amber" : "green"}>{solde > 0 ? "Solde à régler" : "Compte à jour"}</Badge>{!client.actif && <Badge tone="neutral">Client archivé</Badge>}</div></div>
-    {!client.actif && <div className="alert-box mb-4" role="status">Ce client est archivé. Son historique reste consultable, mais aucune nouvelle opération ne peut être enregistrée.</div>}
+    <div className="page-heading"><div><Link to="/clients" className="back-link">{<TexteLocalise phrase={"← Tous les clients"} />}</Link><div className="client-detail-title"><span className="client-avatar client-avatar-large">{client.nom?.trim()?.charAt(0)?.toUpperCase() || "C"}</span><div><h1>{client.nom}</h1><p>{client.telephone || "Aucun téléphone renseigné"}</p></div></div></div><div className="flex flex-wrap gap-2"><Badge tone={solde > 0 ? "amber" : "green"}>{solde > 0 ? "Solde à régler" : "Compte à jour"}</Badge>{!client.actif && <Badge tone="neutral">{<TexteLocalise phrase={"Client archivé"} />}</Badge>}</div></div>
+    {!client.actif && <div className="alert-box mb-4" role="status">{<TexteLocalise phrase={"Ce client est archivé. Son historique reste consultable, mais aucune nouvelle opération ne peut être enregistrée."} />}</div>}
     {erreur && <div className="alert-box mb-4" role="alert">{erreur}</div>}
-    <div className="client-detail-grid"><Card className="balance-card"><span className="balance-icon"><Icon name="wallet" size={22}/></span><p>Solde en cours</p><strong>{formaterFCFA(client.solde)}</strong><small>Dettes enregistrées moins les paiements reçus</small></Card><Card className="balance-explainer"><span className="feature-icon"><Icon name="info" size={21}/></span><h2>Un suivi clair, au même endroit</h2><p>Ajoutez une dette lorsque votre client achète à crédit. Enregistrez ensuite ses paiements pour actualiser son solde.</p></Card></div>
-    {client.actif && <div className="client-actions"><Button onClick={() => setAction("dette")}><Icon name="plus" size={17}/>Ajouter une dette</Button><Button variant="secondary" onClick={() => setAction("paiement")} disabled={solde <= 0}><Icon name="wallet" size={17}/>Enregistrer un paiement</Button></div>}
+    <div className="client-detail-grid"><Card className="balance-card"><span className="balance-icon"><Icon name="wallet" size={22}/></span><p>{<TexteLocalise phrase={"Solde en cours"} />}</p><strong>{formaterFCFA(client.solde)}</strong><small>{<TexteLocalise phrase={"Dettes enregistrées moins les paiements reçus"} />}</small></Card><Card className="balance-explainer"><span className="feature-icon"><Icon name="info" size={21}/></span><h2>{<TexteLocalise phrase={"Un suivi clair, au même endroit"} />}</h2><p>{<TexteLocalise phrase={"Ajoutez une dette lorsque votre client achète à crédit. Enregistrez ensuite ses paiements pour actualiser son solde."} />}</p></Card></div>
+    {client.actif && <div className="client-actions"><Button onClick={() => setAction("dette")}><Icon name="plus" size={17}/>{<TexteLocalise phrase={"Ajouter une dette"} />}</Button><Button variant="secondary" onClick={() => setAction("paiement")} disabled={solde <= 0}><Icon name="wallet" size={17}/>{<TexteLocalise phrase={"Enregistrer un paiement"} />}</Button></div>}
 
-    <section className="debt-list-section"><div className="section-card-heading"><div><h2>Dettes enregistrées</h2><p>Chaque reçu PDF reprend le solde global restant du client.</p></div></div>
-      {dettes.length === 0 ? <Card><p className="empty-state">Aucune dette enregistrée pour ce client.</p></Card> : <div className="debt-list">{dettes.map((dette) => <Card className="debt-item" key={dette.id}>
-        <div className="debt-item-heading"><div><span className="field-hint">Dette du {afficherDate(dette.date)}</span><strong>{formaterFCFA(dette.montant)}</strong>{dette.note && <p>{dette.note}</p>}</div><Badge tone="amber">Dette</Badge></div>
-        {dette.corrections?.length > 0 && <div className="debt-corrections"><strong>Historique des corrections</strong>{dette.corrections.map((correction) => <p key={correction.id}>{afficherDate(correction.date)} : {formaterFCFA(correction.montant_precedent)} → {formaterFCFA(correction.nouveau_montant)} — {correction.raison}</p>)}</div>}
-        <div className="debt-item-actions"><Button variant="secondary" onClick={() => telechargerRecu(dette)} disabled={pdfEnCours === dette.id}>{pdfEnCours === dette.id ? "Préparation…" : "Télécharger le reçu (PDF)"}</Button>{client.actif && <Button variant="ghost" onClick={() => { setDetteChoisie(dette); setMontant(dette.montant); setAction("correction"); }}>Corriger le montant</Button>}</div>
+    <section className="debt-list-section"><div className="section-card-heading"><div><h2>{<TexteLocalise phrase={"Dettes enregistrées"} />}</h2><p>{<TexteLocalise phrase={"Chaque reçu PDF reprend le solde global restant du client."} />}</p></div></div>
+      {dettes.length === 0 ? <Card><p className="empty-state">{<TexteLocalise phrase={"Aucune dette enregistrée pour ce client."} />}</p></Card> : <div className="debt-list">{dettes.map((dette) => <Card className="debt-item" key={dette.id}>
+        <div className="debt-item-heading"><div><span className="field-hint">{<TexteLocalise phrase={"Dette du"} />}{' '}{afficherDate(dette.date)}</span><strong>{formaterFCFA(dette.montant)}</strong>{dette.note && <p>{dette.note}</p>}</div><Badge tone="amber">{<TexteLocalise phrase={"Dette"} />}</Badge></div>
+        {dette.corrections?.length > 0 && <div className="debt-corrections"><strong>{<TexteLocalise phrase={"Historique des corrections"} />}</strong>{dette.corrections.map((correction) => <p key={correction.id}>{afficherDate(correction.date)} : {formaterFCFA(correction.montant_precedent)} → {formaterFCFA(correction.nouveau_montant)} — {correction.raison}</p>)}</div>}
+        <div className="debt-item-actions"><Button variant="secondary" onClick={() => telechargerRecu(dette)} disabled={pdfEnCours === dette.id}>{pdfEnCours === dette.id ? "Préparation…" : "Télécharger le reçu (PDF)"}</Button>{client.actif && <Button variant="ghost" onClick={() => { setDetteChoisie(dette); setMontant(dette.montant); setAction("correction"); }}>{<TexteLocalise phrase={"Corriger le montant"} />}</Button>}</div>
       </Card>)}</div>}
       <Pagination page={pageDettes} count={nombreDettes} onChange={setPageDettes}/>
     </section>
 
     <Modal open={Boolean(action)} title={action === "dette" ? "Ajouter une dette" : action === "paiement" ? "Enregistrer un paiement" : "Corriger le montant"} onClose={fermer}>
-      <form onSubmit={envoyer} className="grid gap-4"><p className="m-0 text-sm text-ink-muted">Client : <strong className="text-ink">{client.nom}</strong></p>
-        {action === "correction" && <p className="m-0 text-sm text-ink-muted">Montant actuel : <strong className="text-ink">{formaterFCFA(detteChoisie?.montant)}</strong>. L’ancien montant et la raison resteront dans l’historique.</p>}
-        <Input label={action === "correction" ? "Nouveau montant (FCFA)" : "Montant (FCFA)"} type="number" min="1" step="1" required value={montant} onChange={(event) => setMontant(event.target.value)} placeholder="Ex. 5 000"/>
-        {action === "dette" && <Input label="Note (facultative)" value={note} onChange={(event) => setNote(event.target.value)} placeholder="Ex. Achat de marchandises"/>}
-        {action === "correction" && <Input label="Raison obligatoire" as="textarea" rows={3} maxLength={250} required value={raison} onChange={(event) => setRaison(event.target.value)} placeholder="Expliquez la correction"/>}
+      <form onSubmit={envoyer} className="grid gap-4"><p className="m-0 text-sm text-ink-muted">{<TexteLocalise phrase={"Client :"} />}{' '}<strong className="text-ink">{client.nom}</strong></p>
+        {action === "correction" && <p className="m-0 text-sm text-ink-muted">{<TexteLocalise phrase={"Montant actuel :"} />}{' '}<strong className="text-ink">{formaterFCFA(detteChoisie?.montant)}</strong>{<TexteLocalise phrase={". L’ancien montant et la raison resteront dans l’historique."} />}</p>}
+        <Input label={action === "correction" ? "Nouveau montant (FCFA)" : "Montant (FCFA)"} type="number" min="1" step="1" required value={montant} onChange={(event) => setMontant(event.target.value)} placeholder={traduire("Ex. 5 000")}/>
+        {action === "dette" && <Input label="Note (facultative)" value={note} onChange={(event) => setNote(event.target.value)} placeholder={traduire("Ex. Achat de marchandises")}/>}
+        {action === "correction" && <Input label="Raison obligatoire" as="textarea" rows={3} maxLength={250} required value={raison} onChange={(event) => setRaison(event.target.value)} placeholder={traduire("Expliquez la correction")}/>}
         {erreur && <div className="alert-box" role="alert">{erreur}</div>}
-        <div className="form-actions justify-end"><Button variant="secondary" onClick={fermer}>Annuler</Button><Button type="submit" disabled={envoi}>{envoi ? "Enregistrement…" : action === "dette" ? "Ajouter la dette" : action === "paiement" ? "Confirmer le paiement" : "Enregistrer la correction"}</Button></div>
+        <div className="form-actions justify-end"><Button variant="secondary" onClick={fermer}>{<TexteLocalise phrase={"Annuler"} />}</Button><Button type="submit" disabled={envoi}>{envoi ? "Enregistrement…" : action === "dette" ? "Ajouter la dette" : action === "paiement" ? "Confirmer le paiement" : "Enregistrer la correction"}</Button></div>
       </form>
     </Modal>
   </>;

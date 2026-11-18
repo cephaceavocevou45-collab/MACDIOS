@@ -4,6 +4,7 @@ Les changements notables du projet sont consignés dans ce fichier.
 
 ## [0.5.0] — 2026-09-30
 
+- Dette technique connue : vulnérabilité DoS faible impact dans braces (dépendance transitive de Tailwind 3). Aucun correctif publié à ce jour. Migration vers Tailwind 4 à planifier séparément, hors urgence, car impact limité au build et sans correctif disponible pour corriger autrement.
 - PostgreSQL est désormais la base de données attendue en développement et en production via `DATABASE_URL`.
 - Les preuves de paiement sont stockées sur Cloudinary comme ressources authentifiées, avec validation des formats et de la taille.
 - Le paiement automatique et son webhook ont été retirés; l'historique antérieur est conservé sous un modèle générique.

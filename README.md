@@ -136,6 +136,8 @@ Le fichier `.env.example` à la racine documente la configuration Docker Compose
 
 Ne commitez jamais les fichiers `.env`. Les identifiants Cloudinary restent exclusivement côté backend.
 
+En développement local (`ENVIRONMENT=development`), si Cloudinary n'est pas configuré, les **logos de profil uniquement** sont stockés dans `backend/media/` et servis par Django, avec un avertissement au démarrage. Ce repli local n'est jamais utilisé en production ; les identifiants Cloudinary sont nécessaires pour y téléverser et conserver les logos. Les preuves de paiement restent sur Cloudinary.
+
 ### Paiement manuel de l'abonnement
 
 Le paiement d'abonnement est manuel. Configurez au moins un des numéros `NUMERO_MTN`, `NUMERO_MOOV` ou `NUMERO_CELTIIS`. Le commerçant transfère le montant exact du plan, puis transmet la référence reçue par SMS et une capture d'écran facultative (JPEG, PNG ou WEBP, maximum 5 Mo). Les preuves sont envoyées à Cloudinary comme ressources authentifiées ; le backend produit un téléchargement signé temporaire seulement après contrôle de l'accès commerçant ou administrateur. Le disque éphémère de Render n'est ainsi pas utilisé pour les fichiers reçus.
@@ -364,3 +366,21 @@ La première exécution demande un mot de passe masqué pour le compte `demo@nob
 ## Licence
 
 Distribué sous licence MIT. Compléter l'année et le titulaire dans [`LICENSE`](LICENSE) avant publication.
+
+## Déploiement automatisé en production
+
+Le workflow `.github/workflows/ci.yml` réserve le déploiement de production aux commits poussés sur `main`, après réussite des tests backend, du lint, de l'audit des dépendances et du build frontend. Il vérifie le SHA réellement servi par Render et Vercel. La maintenance est activée avant les déclenchements puis restaurée à l'état antérieur uniquement après confirmation des deux SHA et des réponses HTTP. Si une vérification échoue ou expire, la maintenance reste active : le Super Admin doit contrôler les déploiements Render/Vercel puis la désactiver depuis `/admin/maintenance` après validation.
+
+### Configuration initiale requise
+
+1. Sur Render, créez un Deploy Hook pour le service backend. Sur Vercel, créez un Deploy Hook de production pour la branche `main`. Ajoutez les URL comme secrets GitHub `RENDER_DEPLOY_HOOK_URL` et `VERCEL_DEPLOY_HOOK_URL`; ne les écrivez jamais dans le dépôt.
+2. Générez un secret aléatoire dédié d'au moins 32 caractères. Définissez-le comme `DEPLOYMENT_MAINTENANCE_TOKEN` dans l'environnement du service Render **et** comme secret GitHub de même nom. Ce n'est pas le mot de passe du Super Admin. Le point API machine reste fermé si le secret n'est pas configuré.
+3. Vercel : activez l'exposition des variables système dans les réglages du projet pour que `VERCEL_GIT_COMMIT_SHA` soit disponible au build. Le build écrit ce SHA dans `version.json`; la CI s'en sert uniquement pour vérifier la version publiée.
+4. Désactivez les déploiements Git directs dans Render et Vercel : Render utilise le hook avec le SHA testé, et `frontend/vercel.json` désactive les déploiements automatiques Git pour éviter les courses. Le projet doit rester connecté au dépôt pour que les hooks fonctionnent. Vercel précise que les hooks ne fonctionnent pas si l'ancienne option `github.enabled` est explicitement `false`; ne la définissez pas.
+5. Le tout premier déploiement de ce mécanisme est une étape d'amorçage : la version déjà en production ne connaît pas encore `/api/deploiement/maintenance/`. Déployez une première fois ce changement depuis les tableaux de bord après validation CI (vous pouvez activer la maintenance manuellement juste avant). Une fois cette version en ligne et le jeton Render configuré, les déploiements suivants seront orchestrés automatiquement.
+
+6. Tant que l'amorçage et la configuration ne sont pas terminés, laissez la variable GitHub `PRODUCTION_DEPLOY_ENABLED` absente ou différente de `true`. Après l'amorçage, créez cette **Actions variable** avec la valeur `true` pour activer les déploiements orchestrés.
+
+Après cette configuration, chaque commit de `main` suit le pipeline. Les nouvelles versions ne sont pas installées par le bouton Maintenance : elles sont déployées par cette CI. Le bouton reste un contrôle manuel de maintenance. En cas d'échec, ne désactivez pas la maintenance avant d'avoir vérifié que l'API répond, que `/api/version/` et `/version.json` affichent le SHA attendu, et que le parcours principal fonctionne.
+
+Secrets GitHub nécessaires : `DEPLOYMENT_MAINTENANCE_TOKEN`, `RENDER_DEPLOY_HOOK_URL`, `VERCEL_DEPLOY_HOOK_URL`. Actions variable GitHub : `PRODUCTION_DEPLOY_ENABLED=true` après l'amorçage. Variable Render nécessaire : `DEPLOYMENT_MAINTENANCE_TOKEN` (facultative au démarrage de Django, indispensable pour l'automatisation). Aucun nouveau paquet Python ou JavaScript n'est ajouté.

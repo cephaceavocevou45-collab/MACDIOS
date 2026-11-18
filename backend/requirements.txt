@@ -16,3 +16,5 @@ boto3>=1.38,<2
 sentry-sdk[django]>=2.30,<3
 reportlab>=4.2,<5
 qrcode[pil]>=8.2,<9
+Pillow>=10,<14
+phonenumbers>=9,<10

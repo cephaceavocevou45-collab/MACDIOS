@@ -12,7 +12,7 @@ from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import mm
 from reportlab.platypus import Image, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
-from commerce.branding import COULEUR_APPLICATION, LOGO_APPLICATION, NOM_APPLICATION
+from commerce.branding import COULEUR_APPLICATION, NOM_APPLICATION
 
 COULEUR_ACCENT = "#D59A35"
 COULEUR_TEXTE = "#1F3144"
@@ -47,7 +47,10 @@ def _creer_qr(url):
     return tampon
 
 
-def construire_recu_certifie(*, titre, sous_titre, lignes, montant_principal, code, url_qr, date_generation):
+def construire_recu_certifie(
+    *, titre, sous_titre, lignes, montant_principal, code, url_qr, date_generation,
+    logo_proprietaire=None, initiales_proprietaire="N",
+):
     """Compose un reçu A4 avec en-tête, détail, montant et panneau QR vérifiable."""
     tampon = BytesIO()
     largeur_page, _ = A4
@@ -101,8 +104,12 @@ def construire_recu_certifie(*, titre, sous_titre, lignes, montant_principal, co
         fontSize=8, leading=11, textColor=colors.HexColor(COULEUR_TEXTE), alignment=TA_CENTER,
     ))
 
+    visuel_proprietaire = (
+        Image(BytesIO(logo_proprietaire), width=13 * mm, height=13 * mm, kind="proportional")
+        if logo_proprietaire else Paragraph(_texte(initiales_proprietaire), styles["RecuMonogramme"])
+    )
     marque = Table([[
-        Paragraph(_texte(LOGO_APPLICATION), styles["RecuMonogramme"]),
+        visuel_proprietaire,
         Paragraph(_texte(NOM_APPLICATION), styles["RecuMarque"]),
         Paragraph("REÇU CERTIFIÉ", ParagraphStyle(
             "RecuEtiquette", parent=styles["RecuCentre"], fontName="Helvetica-Bold",

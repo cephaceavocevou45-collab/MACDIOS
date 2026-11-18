@@ -1,8 +1,10 @@
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import { api } from "../api";
+import { localePourLangue, traduire, useLangue } from "../contexte/LangueContext";
 
 export default function VerifierDocument() {
+  const { langue } = useLangue();
   const { code } = useParams();
   const [etat, setEtat] = useState("chargement");
   const [dateGeneration, setDateGeneration] = useState(null);
@@ -13,7 +15,7 @@ export default function VerifierDocument() {
       .then(({ data }) => {
         if (!actif) return;
         if (data.valide && data.date_generation) {
-          setDateGeneration(new Intl.DateTimeFormat("fr-FR", {
+          setDateGeneration(new Intl.DateTimeFormat(localePourLangue(langue), {
             dateStyle: "long",
             timeStyle: "short",
             timeZone: "Africa/Porto-Novo",
@@ -27,11 +29,11 @@ export default function VerifierDocument() {
         if (actif) setEtat("invalide");
       });
     return () => { actif = false; };
-  }, [code]);
+  }, [code, langue]);
 
-  let message = "Vérification en cours…";
-  if (etat === "valide") message = `Document authentique, généré le ${dateGeneration}`;
-  if (etat === "invalide") message = "Code invalide";
+  let message = traduire("Vérification en cours…", langue);
+  if (etat === "valide") message = `${traduire("Document authentique, généré le", langue)} ${dateGeneration}`;
+  if (etat === "invalide") message = traduire("Code invalide", langue);
 
   // La page publique ne révèle que l'authenticité et la date du document.
   return (

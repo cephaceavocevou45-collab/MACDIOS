@@ -2,6 +2,7 @@
 
 from datetime import timedelta
 from pathlib import Path
+import sys
 import warnings
 
 from decouple import Csv, config
@@ -74,6 +75,7 @@ MIDDLEWARE = [
     "django.middleware.csrf.CsrfViewMiddleware", "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware", "django.middleware.clickjacking.XFrameOptionsMiddleware",
     "commerce.audit_middleware.ContexteAuditMiddleware",
+    "commerce.middleware_maintenance.ModeMaintenanceMiddleware",
     # Axes doit rester le dernier middleware pour ses réponses de verrouillage.
     "axes.middleware.AxesMiddleware",
 ]
@@ -191,16 +193,7 @@ USE_I18N = True
 USE_TZ = True
 STATIC_URL = "/static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
-STORAGES = {
-    "default": {"BACKEND": "commerce.storage.PreuveCloudinaryStorage"},
-    "staticfiles": {"BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage"},
-}
-DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
-FRONTEND_URL = config("FRONTEND_URL", default="http://localhost:5173")
-PUBLIC_FRONTEND_URL = config("PUBLIC_FRONTEND_URL", default=FRONTEND_URL)
-NUMERO_MTN = config("NUMERO_MTN", default="").strip()
-NUMERO_MOOV = config("NUMERO_MOOV", default="").strip()
-NUMERO_CELTIIS = config("NUMERO_CELTIIS", default="").strip()
+MEDIA_URL = "/media/"
 MEDIA_ROOT = BASE_DIR / "media"
 CLOUDINARY_STORAGE = {
     "CLOUD_NAME": config("CLOUDINARY_CLOUD_NAME", default=""),
@@ -208,6 +201,38 @@ CLOUDINARY_STORAGE = {
     "API_SECRET": config("CLOUDINARY_API_SECRET", default=""),
     "SECURE": True,
 }
+CLOUDINARY_CONFIGURE = all(CLOUDINARY_STORAGE[cle] for cle in ("CLOUD_NAME", "API_KEY", "API_SECRET"))
+# Le stockage local n'est permis que pour les logos en développement : les preuves
+# et toute donnée de production restent sur Cloudinary.
+EXECUTION_TESTS = any("pytest" in str(argument).lower() for argument in sys.argv[:2]) or (
+    len(sys.argv) > 1 and sys.argv[1] == "test"
+)
+LOGO_LOCAL_DEVELOPPEMENT = ENVIRONMENT == "development" and not EXECUTION_TESTS and not CLOUDINARY_CONFIGURE
+if LOGO_LOCAL_DEVELOPPEMENT:
+    import logging
+
+    logging.getLogger("django.config").warning(
+        "Cloudinary n'est pas configuré : les logos de profil seront stockés localement pour le développement."
+    )
+
+STORAGES = {
+    "default": {
+        "BACKEND": (
+            "django.core.files.storage.FileSystemStorage"
+            if LOGO_LOCAL_DEVELOPPEMENT
+            else "commerce.storage.PreuveCloudinaryStorage"
+        )
+    },
+    "staticfiles": {"BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage"},
+}
+DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+FRONTEND_URL = config("FRONTEND_URL", default="http://localhost:5173")
+PUBLIC_FRONTEND_URL = config("PUBLIC_FRONTEND_URL", default=FRONTEND_URL)
+# Optionnel. Le point machine de bascule maintenance reste fermé si le secret manque.
+DEPLOYMENT_MAINTENANCE_TOKEN = config("DEPLOYMENT_MAINTENANCE_TOKEN", default="").strip()
+NUMERO_MTN = config("NUMERO_MTN", default="").strip()
+NUMERO_MOOV = config("NUMERO_MOOV", default="").strip()
+NUMERO_CELTIIS = config("NUMERO_CELTIIS", default="").strip()
 PASSWORD_RESET_TIMEOUT = 15 * 60
 CSRF_TRUSTED_ORIGINS = config("CSRF_TRUSTED_ORIGINS", default="", cast=Csv())
 CORS_ALLOW_CREDENTIALS = True

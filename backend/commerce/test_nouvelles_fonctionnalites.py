@@ -38,7 +38,7 @@ class NouvellesFonctionnalitesTests(TestCase):
         self.client_api.force_authenticate(self.user)
 
     @override_settings(REST_FRAMEWORK={"DEFAULT_THROTTLE_RATES": {"inscription": "20/hour"}})
-    def test_telephone_inscription_refuse_formats_invalides_et_accepte_le_format_exact(self):
+    def test_telephone_inscription_refuse_formats_invalides_et_normalise_le_benin(self):
         formats_invalides = (
             "+2290102", "+2296102030", "+229610203040", "22961020304", "+229 61020304", "+229abcdefgh",
         )
@@ -49,14 +49,19 @@ class NouvellesFonctionnalitesTests(TestCase):
                     "mot_de_passe": "MotDePasse123!", "accepte_conditions": True,
                 }, format="json")
                 self.assertEqual(reponse.status_code, status.HTTP_400_BAD_REQUEST)
-                self.assertIn("+229 suivi de 8 chiffres", str(reponse.data))
-        telephone_valide = "+22961020305"
+                self.assertIn("numéro", str(reponse.data).lower())
+        telephone_valide = "+2290161020305"
         acceptee = APIClient().post("/api/auth/inscription/", {
             "email": "telephone-valide@example.test", "telephone": telephone_valide, "nom_boutique": "Boutique valide",
             "mot_de_passe": "MotDePasse123!", "accepte_conditions": True,
         }, format="json")
         self.assertEqual(acceptee.status_code, status.HTTP_201_CREATED, acceptee.data)
         self.assertTrue(Commercant.objects.filter(telephone=telephone_valide).exists())
+        telephone_etranger = APIClient().post("/api/auth/inscription/", {
+            "email": "telephone-us@example.test", "telephone": "+12025550123", "nom_boutique": "Boutique étrangère",
+            "mot_de_passe": "MotDePasse123!", "accepte_conditions": True,
+        }, format="json")
+        self.assertEqual(telephone_etranger.status_code, status.HTTP_201_CREATED, telephone_etranger.data)
 
     def demander_lien(self):
         with patch("commerce.views.envoyer_email") as envoi_email:

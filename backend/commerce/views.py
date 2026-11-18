@@ -12,7 +12,7 @@ from django.middleware.csrf import get_token
 from django.db import DatabaseError, IntegrityError, connection
 from django.db import transaction
 from django.http import FileResponse, Http404, HttpResponse
-from django.db.models import DecimalField, F, OuterRef, Q, Subquery, Sum, Value
+from django.db.models import Count, DecimalField, F, OuterRef, Q, Subquery, Sum, Value
 from django.db.models.functions import Coalesce, TruncDate
 from django.utils.encoding import force_bytes, force_str
 from django.utils import timezone
@@ -31,12 +31,12 @@ from .api_docs import (
     EXEMPLE_CLIENT, EXEMPLE_ERREUR, EXEMPLE_NON_AUTORISE, EXEMPLE_PRODUIT,
     ConnexionReponseSerializer, InscriptionReponseSerializer,
     ConfirmationSuppressionSerializer, CsrfTokenReponseSerializer,
-    OffreEssaiReponseSerializer, ReponseDetailSerializer,
+    OffreEssaiReponseSerializer, ProfilReponseSerializer, ReponseDetailSerializer,
     SanteReponseSerializer, SessionReponseSerializer,
 )
 from .audit import enregistrer_evenement, suspendre_audit
 from .idempotence import CreationIdempotenteMixin
-from .models import Abonnement, Client, ConfigurationEssai, CorrectionDette, DemandePaiementManuel, Dette, JournalAudit, Paiement, PaiementAbonnementHistorique, Plan, Produit, Vente
+from .models import Abonnement, Approvisionnement, Client, ConfigurationEssai, CorrectionDette, DemandePaiementManuel, Dette, Fournisseur, JournalAudit, LigneApprovisionnement, MouvementStock, Paiement, PaiementAbonnementHistorique, Plan, Produit, Vente
 from .pagination import PaginationAudit, PaginationStandard
 from .permissions import AbonnementAutoriseEcriture, EstCommercantAuthentifie, EstProprietaireObjet
 from .authentication import verifier_csrf
@@ -45,16 +45,18 @@ from .jwt_sessions import (
     enregistrer_rotation, revoquer_session, revoquer_sessions_utilisateur, session_depuis_refresh,
 )
 from .services.export_pdf import construire_export_pdf
+from .services.profil_image import logo_profil_pour_pdf, supprimer_logo_profil
 from .services.recu_pdf import construire_recu_certifie
 from .throttles import (
     ThrottleConnexion, ThrottleInscription, ThrottleRefresh,
     ThrottleVerificationDocument,
 )
 from .serializers import (
-    AbonnementSerializer, ClientSerializer, ConnexionSerializer, DemandeReinitialisationSerializer,
+    AbonnementSerializer, AjustementStockSerializer, ApprovisionnementSerializer, ClientSerializer, ConnexionSerializer, DemandeReinitialisationSerializer,
     DetteSerializer, InscriptionSerializer, NouvelleCorrectionDetteSerializer,
     JournalAuditSerializer, PaiementSerializer, PlanSerializer, ProduitSerializer,
-    ReinitialisationMotDePasseSerializer, DemandePaiementManuelSerializer, PaiementAbonnementHistoriqueSerializer, VenteSerializer,
+    ReinitialisationMotDePasseSerializer, DemandePaiementManuelSerializer, FournisseurSerializer, MouvementStockSerializer, PaiementAbonnementHistoriqueSerializer, VenteSerializer,
+    ProfilSerializer,
 )
 from notifications.email import ErreurEnvoiEmail, envoyer_email
 
@@ -96,6 +98,8 @@ def _pdf_recu_dette(dette):
         code=code,
         url_qr=f"{settings.PUBLIC_FRONTEND_URL.rstrip('/')}/verifier/{code}",
         date_generation=_date_recu(dette.date_generation),
+        logo_proprietaire=logo_profil_pour_pdf(dette.commercant),
+        initiales_proprietaire=_initiales(dette.commercant.nom_boutique),
     )
 
 
@@ -117,7 +121,15 @@ def _pdf_recu_abonnement(demande):
         code=code,
         url_qr=f"{settings.PUBLIC_FRONTEND_URL.rstrip('/')}/verifier/{code}",
         date_generation=_date_recu(demande.date_generation),
+        logo_proprietaire=logo_profil_pour_pdf(demande.commercant),
+        initiales_proprietaire=_initiales(demande.commercant.nom_boutique),
     )
+
+
+def _initiales(nom):
+    """Construit un repli lisible sans logo à partir du nom affiché."""
+    mots = [mot for mot in (nom or "").split() if mot]
+    return "".join(mot[0].upper() for mot in mots[:2]) or "N"
 
 
 def _reponse_liste_paginee(request, queryset, serializer_class):
@@ -416,7 +428,7 @@ class ProduitViewSet(VueProprietaire):
         queryset = Produit.objects.filter(commercant=self.request.user)
         recherche = self.request.query_params.get("recherche", "").strip()[:120]
         if recherche:
-            queryset = queryset.filter(nom__icontains=recherche)
+            queryset = queryset.filter(Q(nom__icontains=recherche) | Q(code_barres__iexact=recherche))
         if self.action != "retrieve":
             queryset = queryset.filter(actif=True)
         if self.request.query_params.get("rupture", "").lower() == "true":
@@ -430,6 +442,93 @@ class ProduitViewSet(VueProprietaire):
             )
             produit.actif = False
             produit.save(update_fields=["actif"])
+
+    @extend_schema(
+        tags=["Produits"], summary="Ajuster le stock avec une trace obligatoire",
+        request=AjustementStockSerializer,
+        responses={200: OpenApiTypes.OBJECT, 400: EXEMPLE_ERREUR, 404: EXEMPLE_ERREUR},
+    )
+    @action(detail=True, methods=["post"], url_path="ajuster-stock")
+    def ajuster_stock(self, request, pk=None):
+        serializer = AjustementStockSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        with transaction.atomic():
+            produit = Produit.objects.select_for_update().get(
+                pk=pk, commercant=request.user, actif=True
+            )
+            avant = produit.quantite_stock
+            variation = serializer.validated_data["variation"]
+            apres = avant + variation
+            if apres < 0:
+                raise serializers.ValidationError({"variation": "Le stock ne peut pas devenir négatif."})
+            produit.quantite_stock = apres
+            produit.save(update_fields=["quantite_stock"])
+            MouvementStock.objects.create(
+                commercant=request.user, produit=produit,
+                type=MouvementStock.Type.AJUSTEMENT, variation=variation,
+                quantite_avant=avant, quantite_apres=apres,
+                note=serializer.validated_data["note"], utilisateur=request.user,
+            )
+        return Response({"id": produit.pk, "quantite_stock": produit.quantite_stock})
+
+
+class FournisseurViewSet(VueProprietaire):
+    serializer_class = FournisseurSerializer
+    queryset = Fournisseur.objects.none()
+    lookup_value_regex = r"\d+"
+
+    def get_queryset(self):
+        queryset = Fournisseur.objects.filter(commercant=self.request.user)
+        if self.action != "retrieve":
+            queryset = queryset.filter(actif=True)
+        recherche = self.request.query_params.get("recherche", "").strip()[:160]
+        return queryset.filter(nom__icontains=recherche) if recherche else queryset
+
+    def perform_destroy(self, instance):
+        # Les réceptions conservent leur fournisseur ; suppression = archivage.
+        with transaction.atomic():
+            fournisseur = Fournisseur.objects.select_for_update().get(
+                pk=instance.pk, commercant=self.request.user, actif=True
+            )
+            fournisseur.actif = False
+            fournisseur.save(update_fields=["actif"])
+
+
+class ApprovisionnementViewSet(CreationIdempotenteMixin, mixins.CreateModelMixin, mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.GenericViewSet):
+    operation_idempotente = "approvisionnement"
+    serializer_class = ApprovisionnementSerializer
+    queryset = Approvisionnement.objects.none()
+    lookup_value_regex = r"\d+"
+    permission_classes = [EstCommercantAuthentifie, AbonnementAutoriseEcriture, EstProprietaireObjet]
+    pagination_class = PaginationStandard
+
+    def get_queryset(self):
+        queryset = Approvisionnement.objects.filter(commercant=self.request.user).select_related("fournisseur").prefetch_related("lignes__produit")
+        fournisseur = self.request.query_params.get("fournisseur")
+        if fournisseur and fournisseur.isdigit():
+            queryset = queryset.filter(fournisseur_id=int(fournisseur))
+        return queryset
+
+
+class MouvementStockViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.GenericViewSet):
+    serializer_class = MouvementStockSerializer
+    queryset = MouvementStock.objects.none()
+    lookup_value_regex = r"\d+"
+    permission_classes = [EstCommercantAuthentifie, EstProprietaireObjet]
+    pagination_class = PaginationStandard
+
+    def get_queryset(self):
+        queryset = MouvementStock.objects.filter(commercant=self.request.user).select_related("produit", "utilisateur")
+        produit = self.request.query_params.get("produit")
+        recherche = self.request.query_params.get("recherche", "").strip()[:120]
+        type_mouvement = self.request.query_params.get("type")
+        if produit and produit.isdigit():
+            queryset = queryset.filter(produit_id=int(produit))
+        if recherche:
+            queryset = queryset.filter(produit__nom__icontains=recherche)
+        if type_mouvement in MouvementStock.Type.values:
+            queryset = queryset.filter(type=type_mouvement)
+        return queryset
 
 
 @extend_schema_view(
@@ -476,7 +575,7 @@ class ClientViewSet(VueProprietaire):
 
 @extend_schema_view(
     list=extend_schema(tags=["Ventes"], summary="Lister les ventes", parameters=[OpenApiParameter("periode", str, OpenApiParameter.QUERY, enum=["jour", "semaine", "mois"], description="Période de l'historique")], responses={200: _schema_liste_paginee("VentesPaginees", VenteSerializer), 401: EXEMPLE_NON_AUTORISE}),
-    create=extend_schema(tags=["Ventes"], summary="Enregistrer une vente et déduire le stock", responses={201: VenteSerializer, 400: EXEMPLE_ERREUR, 403: EXEMPLE_NON_AUTORISE}, examples=[OpenApiExample("Nouvelle vente", value={"produit": 1, "client": 1, "quantite": 2}, request_only=True), OpenApiExample("Vente créée", value={"id": 42, "produit": 1, "client": 1, "quantite": 2, "prix_unitaire": "1000.00", "total": "2000.00", "date": "2026-09-28T12:00:00Z"}, response_only=True)]),
+    create=extend_schema(tags=["Ventes"], summary="Enregistrer une vente et déduire le stock", responses={201: VenteSerializer, 400: EXEMPLE_ERREUR, 403: EXEMPLE_NON_AUTORISE}, examples=[OpenApiExample("Nouvelle vente", value={"produit": 1, "client": 1, "quantite": 2}, request_only=True), OpenApiExample("Vente créée", value={"id": 42, "produit": 1, "client": 1, "quantite": 2, "prix_unitaire": "1000.00", "prix_achat_unitaire": "700.00", "benefice_brut": "600.00", "total": "2000.00", "date": "2026-09-28T12:00:00Z"}, response_only=True)]),
     retrieve=extend_schema(tags=["Ventes"], summary="Consulter une vente", responses={200: VenteSerializer, 401: EXEMPLE_NON_AUTORISE, 404: EXEMPLE_ERREUR}),
 )
 class VenteViewSet(CreationIdempotenteMixin, mixins.CreateModelMixin, mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.GenericViewSet):
@@ -718,7 +817,7 @@ class PaiementViewSet(CreationIdempotenteMixin, mixins.CreateModelMixin, mixins.
             serializer.save(commercant=self.request.user, client=client)
 
 
-@extend_schema(tags=["Tableau de bord"], summary="Afficher les indicateurs du commerçant", responses={200: OpenApiTypes.OBJECT, 401: EXEMPLE_NON_AUTORISE}, examples=[OpenApiExample("Indicateurs", value={"ventes_jour": "25000.00", "ventes_semaine": "85000.00", "ventes_mois": "260000.00", "produits_en_rupture": [], "total_dettes_en_cours": "12000.00"}, response_only=True)])
+@extend_schema(tags=["Tableau de bord"], summary="Afficher les indicateurs du commerçant", responses={200: OpenApiTypes.OBJECT, 401: EXEMPLE_NON_AUTORISE}, examples=[OpenApiExample("Indicateurs", value={"ventes_jour": "25000.00", "ventes_semaine": "85000.00", "ventes_mois": "260000.00", "benefice_brut_jour": "7500.00", "benefice_brut_semaine": "24000.00", "benefice_brut_mois": "71000.00", "produits_en_rupture": [], "total_dettes_en_cours": "12000.00"}, response_only=True)])
 @api_view(["GET"])
 @permission_classes([EstCommercantAuthentifie])
 def dashboard(request):
@@ -734,6 +833,27 @@ def dashboard(request):
         return ventes.filter(date__gte=debut).aggregate(
             total=Coalesce(Sum("total"), 0, output_field=champ_montant)
         )["total"]
+
+    def indicateurs_cout(debut):
+        periode = ventes.filter(date__gte=debut)
+        return periode.aggregate(
+            nombre_total=Count("id"),
+            nombre_avec_cout=Count("id", filter=Q(prix_achat_unitaire__isnull=False)),
+            revenus=Coalesce(Sum("total"), 0, output_field=champ_montant),
+            cout=Coalesce(
+                Sum(
+                    F("prix_achat_unitaire") * F("quantite"),
+                    filter=Q(prix_achat_unitaire__isnull=False),
+                    output_field=champ_montant,
+                ),
+                0,
+                output_field=champ_montant,
+            ),
+        )
+
+    cout_jour = indicateurs_cout(debut_jour)
+    cout_semaine = indicateurs_cout(debut_semaine)
+    cout_mois = indicateurs_cout(debut_mois)
 
     ventes_journalieres = ventes.filter(date__gte=debut_semaine).annotate(
         jour_local=TruncDate("date", tzinfo=timezone.get_current_timezone()),
@@ -758,6 +878,16 @@ def dashboard(request):
         "ventes_jour": total_ventes(debut_jour),
         "ventes_semaine": total_ventes(debut_semaine),
         "ventes_mois": total_ventes(debut_mois),
+        "cout_ventes_jour": cout_jour["cout"],
+        "cout_ventes_semaine": cout_semaine["cout"],
+        "cout_ventes_mois": cout_mois["cout"],
+        # Ne pas afficher un bénéfice partiel comme s'il représentait toute la période.
+        "benefice_brut_jour": cout_jour["revenus"] - cout_jour["cout"] if cout_jour["nombre_total"] and cout_jour["nombre_total"] == cout_jour["nombre_avec_cout"] else None,
+        "benefice_brut_semaine": cout_semaine["revenus"] - cout_semaine["cout"] if cout_semaine["nombre_total"] and cout_semaine["nombre_total"] == cout_semaine["nombre_avec_cout"] else None,
+        "benefice_brut_mois": cout_mois["revenus"] - cout_mois["cout"] if cout_mois["nombre_total"] and cout_mois["nombre_total"] == cout_mois["nombre_avec_cout"] else None,
+        "ventes_sans_cout_jour": cout_jour["nombre_total"] - cout_jour["nombre_avec_cout"],
+        "ventes_sans_cout_semaine": cout_semaine["nombre_total"] - cout_semaine["nombre_avec_cout"],
+        "ventes_sans_cout_mois": cout_mois["nombre_total"] - cout_mois["nombre_avec_cout"],
         "ventes_semaine_jour": ventes_semaine_jour,
         # Le dashboard conserve une réponse bornée ; la page Produits permet
         # de consulter toutes les ruptures avec pagination serveur.
@@ -954,6 +1084,100 @@ def export_compte(request):
 
 
 @extend_schema(
+    tags=["Compte"], summary="Consulter ou modifier son profil utilisateur",
+    request=ProfilSerializer,
+    responses={200: ProfilReponseSerializer, 400: EXEMPLE_ERREUR, 401: EXEMPLE_NON_AUTORISE},
+)
+@api_view(["GET", "PATCH"])
+@permission_classes([IsAuthenticated])
+def profil_courant(request):
+    """Ne lit et ne modifie que le compte porté par la session courante."""
+    utilisateur = request.user
+    if request.method == "GET":
+        return Response(ProfilSerializer(utilisateur, context={"request": request}).data)
+
+    serializer = ProfilSerializer(utilisateur, data=request.data, partial=True, context={"request": request})
+    serializer.is_valid(raise_exception=True)
+    donnees = serializer.validated_data.copy()
+    avant = {}
+    apres = {}
+    logo_present_avant = bool(utilisateur.logo_profil)
+    for champ in ("nom_affiche", "telephone", "adresse", "ville"):
+        if champ not in donnees:
+            continue
+        valeur_avant = ProfilSerializer().get_nom_affiche(utilisateur) if champ == "nom_affiche" else getattr(utilisateur, champ)
+        avant[champ] = valeur_avant
+
+    logo_modifie = "logo" in donnees
+    if logo_modifie and not settings.CLOUDINARY_CONFIGURE and not settings.LOGO_LOCAL_DEVELOPPEMENT:
+        return Response(
+            {"detail": "Le stockage des images n’est pas configuré. Retirez l’image pour enregistrer les autres informations."},
+            status=status.HTTP_503_SERVICE_UNAVAILABLE,
+        )
+    with transaction.atomic():
+        try:
+            serializer.save()
+        except Exception:
+            if not logo_modifie:
+                raise
+            # Un incident Cloudinary ne doit pas devenir une page HTML 500.
+            logger.error("Échec du stockage Cloudinary pendant la mise à jour du profil.")
+            return Response(
+                {"detail": "La photo ne peut pas être enregistrée pour le moment. Réessayez ou retirez-la pour enregistrer le reste du profil."},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+        for champ in avant:
+            apres[champ] = ProfilSerializer().get_nom_affiche(utilisateur) if champ == "nom_affiche" else getattr(utilisateur, champ)
+        if logo_modifie:
+            avant["logo"] = "présent" if logo_present_avant else "absent"
+            apres["logo"] = "remplacé" if logo_present_avant else "présent"
+        if avant and avant != apres:
+            enregistrer_evenement(
+                commercant=utilisateur,
+                utilisateur=utilisateur,
+                action=JournalAudit.Action.MODIFICATION,
+                objet_type="ProfilUtilisateur",
+                objet_id=utilisateur.pk,
+                anciennes_valeurs=avant,
+                nouvelles_valeurs=apres,
+                adresse_ip=request._request.META.get("REMOTE_ADDR"),
+            )
+    return Response(ProfilSerializer(utilisateur, context={"request": request}).data)
+
+
+@extend_schema(
+    tags=["Compte"], summary="Supprimer le logo de son profil", request=None,
+    responses={200: ProfilReponseSerializer, 401: EXEMPLE_NON_AUTORISE, 503: EXEMPLE_ERREUR},
+)
+@api_view(["DELETE"])
+@permission_classes([IsAuthenticated])
+def supprimer_logo_profil_courant(request):
+    """Retire uniquement le logo du compte authentifié."""
+    utilisateur = request.user
+    if not utilisateur.logo_profil:
+        return Response(ProfilSerializer(utilisateur).data)
+    try:
+        supprimer_logo_profil(utilisateur)
+    except Exception:
+        logger.warning("Échec de suppression du logo Cloudinary du profil.")
+        return Response(
+            {"detail": "Le logo n'a pas pu être supprimé pour le moment. Réessayez."},
+            status=status.HTTP_503_SERVICE_UNAVAILABLE,
+        )
+    enregistrer_evenement(
+        commercant=utilisateur,
+        utilisateur=utilisateur,
+        action=JournalAudit.Action.MODIFICATION,
+        objet_type="ProfilUtilisateur",
+        objet_id=utilisateur.pk,
+        anciennes_valeurs={"logo": "présent"},
+        nouvelles_valeurs={"logo": "absent"},
+        adresse_ip=request._request.META.get("REMOTE_ADDR"),
+    )
+    return Response(ProfilSerializer(utilisateur).data)
+
+
+@extend_schema(
     tags=["Compte"], summary="Supprimer le compte après confirmation du mot de passe",
     request=ConfirmationSuppressionSerializer,
     responses={200: ReponseDetailSerializer, 400: EXEMPLE_ERREUR, 401: EXEMPLE_NON_AUTORISE},
@@ -971,6 +1195,14 @@ def supprimer_compte(request):
     from axes.models import AccessAttempt, AccessFailureLog, AccessLog
 
     utilisateur = request.user
+    try:
+        supprimer_logo_profil(utilisateur)
+    except Exception:
+        logger.warning("Échec de suppression du logo avant la suppression du compte.")
+        return Response(
+            {"detail": "Le logo du profil n'a pas pu être supprimé. Réessayez avant de supprimer le compte."},
+            status=status.HTTP_503_SERVICE_UNAVAILABLE,
+        )
     with transaction.atomic(), suspendre_audit():
         # Supprime les traces historiques sous email et sous l'ancien identifiant téléphone.
         identifiants = [utilisateur.email]
@@ -985,5 +1217,11 @@ def supprimer_compte(request):
         Vente.objects.filter(commercant=utilisateur).delete()
         Dette.objects.filter(commercant=utilisateur).delete()
         Paiement.objects.filter(commercant=utilisateur).delete()
+        # Les nouveaux journaux protègent leurs références produit/achat.
+        # Ils sont effacés ici avant la suppression définitive du compte.
+        MouvementStock.objects.filter(commercant=utilisateur).delete()
+        LigneApprovisionnement.objects.filter(approvisionnement__commercant=utilisateur).delete()
+        Approvisionnement.objects.filter(commercant=utilisateur).delete()
+        Fournisseur.objects.filter(commercant=utilisateur).delete()
         utilisateur.delete()
     return Response(status=status.HTTP_204_NO_CONTENT)

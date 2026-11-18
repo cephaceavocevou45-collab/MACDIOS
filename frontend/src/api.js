@@ -1,4 +1,5 @@
 import axios from "axios";
+import { traduire } from "./contexte/LangueContext";
 
 // L'URL vient de .env ; sans valeur, on utilise le serveur Django local.
 const baseURL = (import.meta.env.VITE_API_URL || "http://127.0.0.1:8000").replace(/\/$/, "");
@@ -90,6 +91,9 @@ api.interceptors.response.use(
   async (erreur) => {
     const requete = erreur.config;
     if (requete) requete._nobiCodeErreur = erreur.response?.status;
+    if (erreur.response?.status === 503 && erreur.response?.data?.code === "maintenance_active") {
+      window.dispatchEvent(new CustomEvent("maintenance-active", { detail: erreur.response.data }));
+    }
     const estRouteAuth = (requete?.url?.includes("/api/auth/") && !requete?.url?.includes("/api/auth/session/"))
       || requete?.url?.includes("/api/admin/auth/");
     if (erreur.response?.status !== 401 || !requete || requete._retentee || estRouteAuth) {
@@ -121,13 +125,25 @@ api.interceptors.response.use(
 
 export function messageErreur(erreur) {
   const donnees = erreur?.response?.data;
-  if (typeof donnees === "string") return donnees;
+  const typeContenu = String(erreur?.response?.headers?.["content-type"] || "").toLowerCase();
+  const reponseHtml = typeContenu.includes("text/html")
+    || (typeof donnees === "string" && /<!doctype\s+html|<html\b/i.test(donnees));
+  if (reponseHtml) {
+    if ((erreur.response?.status || 0) >= 500) {
+      return traduire("Le serveur rencontre un problème. Réessayez dans quelques instants.");
+    }
+    if (erreur.response?.status === 403) {
+      return traduire("La vérification de sécurité a échoué. Actualisez la page et réessayez.");
+    }
+    return traduire("Le serveur a renvoyé une réponse inattendue. Réessayez.");
+  }
+  if (typeof donnees === "string") return traduire(donnees);
   if (donnees && typeof donnees === "object") {
     const premiere = Object.values(donnees)[0];
-    if (Array.isArray(premiere)) return String(premiere[0]);
-    if (typeof premiere === "string") return premiere;
+    if (Array.isArray(premiere)) return traduire(String(premiere[0]));
+    if (typeof premiere === "string") return traduire(premiere);
   }
-  if (erreur?.code === "ECONNABORTED") return "La connexion est lente. Réessayez.";
-  if (!erreur?.response) return "Serveur inaccessible. Vérifiez votre connexion internet.";
-  return "Une erreur est survenue. Réessayez.";
+  if (erreur?.code === "ECONNABORTED") return traduire("La connexion est lente. Réessayez.");
+  if (!erreur?.response) return traduire("Serveur inaccessible. Vérifiez votre connexion internet.");
+  return traduire("Une erreur est survenue. Réessayez.");
 }

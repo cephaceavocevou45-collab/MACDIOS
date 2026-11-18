@@ -11,9 +11,10 @@ from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import mm
-from reportlab.platypus import LongTable, Paragraph, SimpleDocTemplate, Spacer, TableStyle
+from reportlab.platypus import Image, LongTable, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
 from commerce.branding import COULEUR_APPLICATION, LOGO_APPLICATION, NOM_APPLICATION
+from commerce.services.profil_image import logo_profil_pour_pdf
 from commerce.models import (
     Abonnement, Client, CorrectionDette, DemandePaiementManuel, Dette, Paiement,
     PaiementAbonnementHistorique, Produit, Vente,
@@ -100,8 +101,23 @@ def construire_export_pdf(commercant):
         ]))
         story.append(table)
 
+    nom_affiche = commercant.nom_boutique
+    profil_sous_admin = getattr(commercant, "profil_sous_admin", None)
+    if commercant.is_staff and profil_sous_admin:
+        nom_affiche = profil_sous_admin.nom
+    logo = logo_profil_pour_pdf(commercant)
+    logo_visuel = (
+        Image(BytesIO(logo), width=13 * mm, height=13 * mm, kind="proportional")
+        if logo else Paragraph(_texte("".join(mot[0].upper() for mot in nom_affiche.split()[:2]) or LOGO_APPLICATION), styles["Heading2"])
+    )
+    marque = Table([[
+        logo_visuel,
+        Paragraph(f'<font color="{COULEUR_APPLICATION}"><b>{_texte(NOM_APPLICATION)}</b></font><br/>{_texte(nom_affiche)}', styles["Heading2"]),
+    ]], colWidths=[18 * mm, 162 * mm])
+    marque.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("LEFTPADDING", (0, 0), (-1, -1), 0)]))
+
     story = [
-        Paragraph(f'<font color="{COULEUR_APPLICATION}"><b>{_texte(LOGO_APPLICATION)} &nbsp; {_texte(NOM_APPLICATION)}</b></font>', styles["Heading2"]),
+        marque,
         Spacer(1, 3 * mm),
         Paragraph("Export de mes données", styles["Title"]),
         Paragraph(f"Généré le {_date(timezone.now())}", styles["BodyText"]),
@@ -109,9 +125,11 @@ def construire_export_pdf(commercant):
 
     story.append(Paragraph("Informations du commerçant", styles["SectionExport"]))
     infos = [
-        ["Nom de la boutique", commercant.nom_boutique],
+        ["Nom affiché", nom_affiche],
         ["Adresse email", commercant.email],
         ["Téléphone", commercant.telephone or "Non renseigné"],
+        ["Adresse", commercant.adresse or "Non renseignée"],
+        ["Ville", commercant.ville or "Non renseignée"],
         ["Compte créé le", _date(commercant.date_joined)],
         ["Consentement enregistré le", _date(commercant.consentement_le)],
     ]
@@ -127,19 +145,23 @@ def construire_export_pdf(commercant):
     ]))
     story.append(info_table)
 
-    tableau("Produits", ["Nom", "Prix", "Stock", "Seuil d’alerte", "Créé le"], [
-        [p.nom, _fcfa(p.prix), p.quantite_stock, p.seuil_alerte, _date(p.date_creation)] for p in produits
-    ], [48 * mm, 32 * mm, 20 * mm, 32 * mm, 48 * mm])
+    tableau("Produits", ["Nom", "Prix de vente", "Coût d’achat", "Stock", "Marge potentielle", "Seuil"], [
+        [p.nom, _fcfa(p.prix), _fcfa(p.prix_achat) if p.prix_achat is not None else "—", p.quantite_stock,
+         _fcfa((p.prix - p.prix_achat) * p.quantite_stock) if p.prix_achat is not None else "—", p.seuil_alerte]
+        for p in produits
+    ], [39 * mm, 27 * mm, 27 * mm, 15 * mm, 43 * mm, 29 * mm])
 
     tableau("Clients et soldes", ["Nom", "Téléphone", "Total des dettes", "Total des paiements", "Solde"], [
         [c.nom, c.telephone or "—", _fcfa(total_dettes.get(c.pk, 0)), _fcfa(total_paiements.get(c.pk, 0)), _fcfa(total_dettes.get(c.pk, 0) - total_paiements.get(c.pk, 0))]
         for c in clients
     ], [40 * mm, 34 * mm, 37 * mm, 39 * mm, 30 * mm])
 
-    tableau("Historique des ventes", ["Date", "Produit", "Client", "Qté", "Prix unitaire", "Total"], [
-        [_date(v.date), v.produit.nom, v.client.nom if v.client else "Vente directe", v.quantite, _fcfa(v.prix_unitaire), _fcfa(v.total)]
+    tableau("Historique des ventes", ["Date", "Produit", "Client", "Qté", "Prix vendu", "Coût total", "Marge brute", "Total"], [
+        [_date(v.date), v.produit.nom, v.client.nom if v.client else "Vente directe", v.quantite, _fcfa(v.prix_unitaire),
+         _fcfa(v.prix_achat_unitaire * v.quantite) if v.prix_achat_unitaire is not None else "—",
+         _fcfa(v.benefice_brut) if v.benefice_brut is not None else "—", _fcfa(v.total)]
         for v in ventes
-    ], [31 * mm, 38 * mm, 34 * mm, 12 * mm, 32 * mm, 33 * mm])
+    ], [24 * mm, 28 * mm, 25 * mm, 10 * mm, 22 * mm, 24 * mm, 25 * mm, 22 * mm])
 
     mouvements = []
     mouvements.extend((d.date, [d.date, "Dette", d.client.nom, d.note or "Dette enregistrée", _fcfa(d.montant)]) for d in dettes)
