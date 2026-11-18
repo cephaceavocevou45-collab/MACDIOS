@@ -66,7 +66,7 @@ jobs:
       - name: Exécuter les tests avec couverture minimale de 80 %
         run: pytest
       - name: Exécuter explicitement les tests de concurrence PostgreSQL
-        run: pytest -q commerce/tests.py::PaiementConcurrenceTests commerce/tests.py::VenteConcurrenceTests -rs
+        run: pytest -q --no-cov commerce/tests.py::PaiementConcurrenceTests commerce/tests.py::VenteConcurrenceTests -rs
       - name: Publier le rapport de couverture HTML
         if: always()
         uses: actions/upload-artifact@v4
@@ -94,8 +94,8 @@ jobs:
         run: npm ci
       - name: Vérifier le lint JavaScript
         run: npm run lint
-      - name: Auditer les dépendances JavaScript
-        run: npm audit --audit-level=high
+      - name: Auditer les dépendances JavaScript de production
+        run: npm audit --omit=dev --audit-level=high
       - name: Compiler le frontend
         run: npm run build
 

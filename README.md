@@ -297,6 +297,7 @@ npm audit
 - La suppression d'un client ou d'un produit via l'application archive l'enregistrement. Les ventes, dettes, paiements et rapports historiques restent consultables; un client ou produit archivé ne peut pas être réutilisé pour une nouvelle opération.
 - Le journal d'audit est filtré par commerçant, paginé et en lecture seule dans l'API et l'administration. Les champs téléphones, mots de passe, jetons et clés sont exclus ou masqués.
 - Sentry est inactif quand le DSN est vide. Les événements sont filtrés avant envoi; les logs de production sont des lignes JSON sans valeurs de requête.
+- La CI audite les dépendances JavaScript livrées au navigateur avec `npm audit --omit=dev --audit-level=high`. Le graphe complet de développement signale actuellement l'avis [GHSA-fc5q-39xc-vjpf](https://github.com/advisories/GHSA-fc5q-39xc-vjpf) dans `picomatch`, utilisé par la chaîne Vite/Tailwind; l'avis officiel ne publie pas encore de version corrigée. Ces outils ne sont pas inclus dans les fichiers statiques servis en production. L'audit complet reste à surveiller et cette exception doit être retirée dès qu'un correctif compatible est disponible.
 - L'export contient les données de la boutique sans hash de mot de passe. La suppression exige le mot de passe et efface les données métier, l'audit associé et les traces Axes liées au compte.
 - Les pages Conditions et Confidentialité portent la mention **MODÈLE À FAIRE VALIDER PAR UN JURISTE**. Compléter et faire valider les textes et coordonnées avant ouverture publique.
 

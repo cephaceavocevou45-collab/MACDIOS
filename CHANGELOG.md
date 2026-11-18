@@ -2,6 +2,11 @@
 
 Les changements notables du projet sont consignés dans ce fichier.
 
+## [Préparation de livraison] — 2026-11-18
+
+- L'audit de CI vérifie les vulnérabilités hautes des dépendances JavaScript de production. L'avis `GHSA-fc5q-39xc-vjpf` sur `picomatch` reste connu dans les outils de build (Vite/Tailwind) sans version corrigée annoncée; il est documenté et suivi séparément.
+- Les tests ciblés de concurrence PostgreSQL ne comptent plus leur couverture isolée contre le seuil global de 80 %; la suite complète garde le seuil.
+
 ## [0.5.0] — 2026-09-30
 
 - Dette technique connue : vulnérabilité DoS faible impact dans braces (dépendance transitive de Tailwind 3). Aucun correctif publié à ce jour. Migration vers Tailwind 4 à planifier séparément, hors urgence, car impact limité au build et sans correctif disponible pour corriger autrement.
