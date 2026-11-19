@@ -53,11 +53,12 @@ def creer_paiement(paiement):
     customer = {"email": user.email, "firstname": user.nom_boutique[:60], "lastname": "Commerçant"}
     if telephone:
         customer["phone_number"] = {"number": telephone, "country": "bj"}
-    transaction_data = _data(_requete("POST", "/transactions", payload={"transaction": {
+    # L'API REST FedaPay attend les champs de transaction à la racine du JSON.
+    transaction_data = _data(_requete("POST", "/transactions", payload={
         "description": f"Abonnement {paiement.plan.nom}", "amount": int(paiement.montant),
         "currency": {"iso": "XOF"}, "callback_url": f"{settings.PUBLIC_FRONTEND_URL.rstrip('/')}/abonnement?paiement={paiement.reference}",
         "custom_metadata": {"reference_abonnement": str(paiement.reference)}, "customer": customer,
-    }}))
+    }))
     identifiant = transaction_data.get("id")
     if not identifiant:
         raise FedaPayErreur()
