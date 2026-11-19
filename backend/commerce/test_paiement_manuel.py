@@ -71,12 +71,10 @@ class PaiementManuelTests(TestCase):
         self.assertEqual(doublon.status_code, 409)
         self.assertEqual(DemandePaiementManuel.objects.count(), 1)
 
-    def test_un_seul_operateur_configure_est_expose_uniquement_a_un_compte_connecte(self):
+    def test_fedapay_est_le_mode_paiement_expose_uniquement_a_un_compte_connecte(self):
         reponse = self.api.get("/api/abonnement/")
-        self.assertEqual(reponse.data["mode_paiement"], "manuel")
-        self.assertEqual(reponse.data["operateurs_paiement"], [
-            {"code": "mtn", "nom": "MTN", "numero": "22961020304"},
-        ])
+        self.assertEqual(reponse.data["mode_paiement"], "fedapay")
+        self.assertNotIn("operateurs_paiement", reponse.data)
         self.api.force_authenticate(user=None)
         anonyme = self.api.get("/api/abonnement/")
         self.assertEqual(anonyme.status_code, 401)
