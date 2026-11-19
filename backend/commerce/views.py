@@ -52,7 +52,7 @@ from .jwt_sessions import (
 from .services.export_pdf import construire_export_pdf
 from .services.profil_image import logo_profil_pour_pdf, supprimer_logo_profil
 from .services.recu_pdf import construire_recu_certifie
-from .services.fedapay import actualiser_paiement, creer_paiement, FedaPayErreur
+from .services.fedapay import actualiser_paiement, creer_paiement
 from .throttles import (
     ThrottleConnexion, ThrottleInscription, ThrottleRefresh,
     ThrottleVerificationDocument,
