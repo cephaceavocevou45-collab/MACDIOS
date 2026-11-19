@@ -7,7 +7,8 @@ from .views import (
     supprimer_compte, sante, mot_de_passe_oublie, reinitialiser_mot_de_passe,
     verifier_document, document_verification_pdf, demandes_paiement_abonnement, preuve_demande_abonnement,
     recu_abonnement_manuel, offre_essai, jeton_csrf, session_authentifiee, deconnexion,
-    profil_courant, supprimer_logo_profil_courant,
+    profil_courant, supprimer_logo_profil_courant, creer_paiement_abonnement,
+    verifier_paiement_abonnement, webhook_fedapay,
 )
 from .maintenance_api import MaintenanceDeploiement, statut_maintenance, version_deployee
 
@@ -46,6 +47,9 @@ urlpatterns = [
     path("offre-essai/", offre_essai, name="offre-essai"),
     path("abonnement/", abonnement_actuel, name="abonnement"),
     path("abonnement/transactions/", historique_abonnement, name="abonnement-transactions"),
+    path("abonnement/paiements/", creer_paiement_abonnement, name="abonnement-paiement-creer"),
+    path("abonnement/paiements/<uuid:reference>/", verifier_paiement_abonnement, name="abonnement-paiement-verifier"),
+    path("webhooks/fedapay/", webhook_fedapay, name="webhook-fedapay"),
     path("abonnement/demandes/", demandes_paiement_abonnement, name="abonnement-demandes"),
     path("abonnement/demandes/<int:pk>/preuve/", preuve_demande_abonnement, name="abonnement-demande-preuve"),
     path("abonnement/demandes/<int:pk>/recu/", recu_abonnement_manuel, name="abonnement-demande-recu"),

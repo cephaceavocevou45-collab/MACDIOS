@@ -123,7 +123,9 @@ Le fichier `.env.example` à la racine documente la configuration Docker Compose
 | `BACKUP_S3_PREFIX`, `AWS_REGION`, `AWS_ENDPOINT_URL`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` | Réglages du stockage S3 lorsque celui-ci est activé. Les identifiants AWS doivent être disponibles via l'environnement ou un mécanisme d'identité AWS. |
 | `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD` | Identifiants du service PostgreSQL Docker Compose ; garder ces valeurs alignées sur `DATABASE_URL` |
 | `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET` | Accès privé du stockage de preuves Cloudinary, backend uniquement |
-| `NUMERO_MTN`, `NUMERO_MOOV`, `NUMERO_CELTIIS` | Numéros Mobile Money privés affichés selon l'opérateur configuré; une option vide est masquée |
+| `FEDAPAY_SECRET_KEY` | Clé secrète FedaPay, backend uniquement. Ne jamais la mettre dans le frontend, Git ou un message. |
+| `FEDAPAY_ENVIRONMENT` | `sandbox` pour les essais (défaut) ou `live` pour les encaissements réels. |
+| `FEDAPAY_WEBHOOK_SECRET` | Secret `wh_...` propre au webhook FedaPay et à son environnement, utilisé pour vérifier la signature. |
 | `SENTRY_DSN`, `VITE_SENTRY_DSN` | DSN Sentry facultatifs, aucun événement transmis si vides |
 | `SECURE_SSL_REDIRECT`, `SECURE_HSTS_SECONDS`, `CSRF_TRUSTED_ORIGINS` | Réglages HTTPS et origine CSRF en production |
 | `LOG_LEVEL` | Niveau des logs JSON en production |
@@ -140,7 +142,7 @@ En développement local (`ENVIRONMENT=development`), si Cloudinary n'est pas con
 
 ### Paiement manuel de l'abonnement
 
-Le paiement d'abonnement est manuel. Configurez au moins un des numéros `NUMERO_MTN`, `NUMERO_MOOV` ou `NUMERO_CELTIIS`. Le commerçant transfère le montant exact du plan, puis transmet la référence reçue par SMS et une capture d'écran facultative (JPEG, PNG ou WEBP, maximum 5 Mo). Les preuves sont envoyées à Cloudinary comme ressources authentifiées ; le backend produit un téléchargement signé temporaire seulement après contrôle de l'accès commerçant ou administrateur. Les fichiers restent ainsi hors du disque éphémère des services applicatifs.
+Les paiements d'abonnement utilisent FedaPay. Le backend crée la transaction en XOF et n'active l'abonnement qu'après avoir relu son statut auprès de l'API FedaPay et vérifié son montant et sa référence locale. En local, utilisez une clé secrète Sandbox et `FEDAPAY_ENVIRONMENT=sandbox`. En production, définissez `FEDAPAY_SECRET_KEY` dans les variables privées du backend Railway et choisissez `FEDAPAY_ENVIRONMENT=live` uniquement après validation du parcours Sandbox. Le webhook FedaPay à enregistrer est `https://<domaine-api>/api/webhooks/fedapay/`; ajoutez dans Railway le secret de signature `wh_...` correspondant dans `FEDAPAY_WEBHOOK_SECRET`. Les clés API et webhook diffèrent selon Sandbox et Live. La confirmation de retour utilisateur relit aussi l'état chez FedaPay. Les demandes manuelles existantes sont conservées pour l'historique administratif.
 
 Dans l'administration Django, ouvrez **Demandes de paiement manuel**. Les actions « Valider les demandes sélectionnées » et « Rejeter les demandes sélectionnées » enregistrent l'administrateur et la date dans le journal d'audit. Le rejet demande un motif, envoyé au commerçant par email. Une validation active le plan pour sa durée, envoie un email de confirmation et permet au commerçant de télécharger un reçu PDF certifié avec QR code.
 

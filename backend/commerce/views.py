@@ -1,6 +1,10 @@
 from datetime import datetime, time, timedelta
 from decimal import Decimal
+import hashlib
+import hmac
+import json
 import logging
+import time as unix_time
 import uuid
 from urllib.parse import urlencode
 
@@ -16,6 +20,7 @@ from django.db.models import Count, DecimalField, F, OuterRef, Q, Subquery, Sum,
 from django.db.models.functions import Coalesce, TruncDate
 from django.utils.encoding import force_bytes, force_str
 from django.utils import timezone
+from django.views.decorators.csrf import csrf_exempt
 from django.utils.dateparse import parse_date
 from django.utils.html import format_html
 from django.utils.http import urlsafe_base64_decode, urlsafe_base64_encode
@@ -47,6 +52,7 @@ from .jwt_sessions import (
 from .services.export_pdf import construire_export_pdf
 from .services.profil_image import logo_profil_pour_pdf, supprimer_logo_profil
 from .services.recu_pdf import construire_recu_certifie
+from .services.fedapay import actualiser_paiement, creer_paiement, FedaPayErreur
 from .throttles import (
     ThrottleConnexion, ThrottleInscription, ThrottleRefresh,
     ThrottleVerificationDocument,
@@ -906,16 +912,7 @@ def abonnement_actuel(request):
         abonnement.statut = Abonnement.Statut.EXPIRE
         abonnement.save(update_fields=["statut"])
     donnees = AbonnementSerializer(abonnement).data
-    donnees["mode_paiement"] = "manuel"
-    operateurs = [
-        (DemandePaiementManuel.Operateur.MTN, "MTN", settings.NUMERO_MTN),
-        (DemandePaiementManuel.Operateur.MOOV, "Moov", settings.NUMERO_MOOV),
-        (DemandePaiementManuel.Operateur.CELTIIS, "Celtiis", settings.NUMERO_CELTIIS),
-    ]
-    donnees["operateurs_paiement"] = [
-        {"code": code, "nom": nom, "numero": numero}
-        for code, nom, numero in operateurs if numero
-    ]
+    donnees["mode_paiement"] = "fedapay"
     return Response(donnees)
 
 
@@ -943,6 +940,83 @@ def offre_essai(request):
 def historique_abonnement(request):
     paiements = PaiementAbonnementHistorique.objects.filter(commercant=request.user).select_related("plan")
     return _reponse_liste_paginee(request, paiements, PaiementAbonnementHistoriqueSerializer)
+
+
+@extend_schema(tags=["Abonnement"], summary="Créer un paiement FedaPay pour une formule")
+@api_view(["POST"])
+@permission_classes([EstCommercantAuthentifie])
+def creer_paiement_abonnement(request):
+    if not settings.FEDAPAY_SECRET_KEY:
+        return Response({"detail": "Le paiement FedaPay n'est pas encore configuré."}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+    try:
+        plan_id = int(request.data.get("plan_id"))
+    except (TypeError, ValueError):
+        return Response({"detail": "Choisissez une formule valide."}, status=status.HTTP_400_BAD_REQUEST)
+    plan = Plan.objects.filter(pk=plan_id, actif=True, prix__gt=0).first()
+    if plan is None:
+        return Response({"detail": "Cette formule n'est pas disponible."}, status=status.HTTP_404_NOT_FOUND)
+    if plan.prix != plan.prix.to_integral_value():
+        return Response({"detail": "Le prix de cette formule doit être un montant entier en FCFA."}, status=status.HTTP_400_BAD_REQUEST)
+    if PaiementAbonnementHistorique.objects.filter(commercant=request.user, statut=PaiementAbonnementHistorique.Statut.EN_ATTENTE).exists():
+        return Response({"detail": "Un paiement est déjà en attente. Revenez à la page abonnement pour vérifier son état."}, status=status.HTTP_409_CONFLICT)
+    paiement = PaiementAbonnementHistorique.objects.create(commercant=request.user, plan=plan, montant=plan.prix)
+    try:
+        url = creer_paiement(paiement)
+    except APIException:
+        paiement.statut = PaiementAbonnementHistorique.Statut.ECHOUE
+        paiement.save(update_fields=["statut"])
+        raise
+    return Response({"reference": str(paiement.reference), "checkout_url": url}, status=status.HTTP_201_CREATED)
+
+
+@extend_schema(tags=["Abonnement"], summary="Vérifier l'état d'un paiement FedaPay")
+@api_view(["GET"])
+@permission_classes([EstCommercantAuthentifie])
+def verifier_paiement_abonnement(request, reference):
+    paiement = PaiementAbonnementHistorique.objects.filter(reference=reference, commercant=request.user).first()
+    if paiement is None:
+        return Response({"detail": "Paiement introuvable."}, status=status.HTTP_404_NOT_FOUND)
+    if paiement.statut == PaiementAbonnementHistorique.Statut.EN_ATTENTE:
+        paiement = actualiser_paiement(paiement)
+    return Response({"reference": str(paiement.reference), "statut": paiement.statut})
+
+
+@csrf_exempt
+@api_view(["POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+def webhook_fedapay(request):
+    """Vérifie la signature puis relit la transaction chez FedaPay avant traitement."""
+    secret = settings.FEDAPAY_WEBHOOK_SECRET
+    signature_header = request.headers.get("X-FEDAPAY-SIGNATURE", "")
+    parties = dict(item.split("=", 1) for item in signature_header.split(",") if "=" in item)
+    try:
+        horodatage = int(parties["t"])
+        signature = parties["s"]
+    except (KeyError, ValueError):
+        return Response({"detail": "Signature de webhook invalide."}, status=status.HTTP_400_BAD_REQUEST)
+    corps_brut = request.body.decode("utf-8", errors="strict")
+    attendu = hmac.new(secret.encode(), f"{horodatage}.{corps_brut}".encode(), hashlib.sha256).hexdigest() if secret else ""
+    if not secret or abs(int(unix_time.time()) - horodatage) > 300 or not hmac.compare_digest(signature, attendu):
+        return Response({"detail": "Signature de webhook invalide."}, status=status.HTTP_400_BAD_REQUEST)
+    try:
+        corps = json.loads(corps_brut)
+    except json.JSONDecodeError:
+        return Response({"detail": "Événement invalide."}, status=status.HTTP_400_BAD_REQUEST)
+    transaction_data = corps.get("object") or corps.get("entity") or corps.get("transaction") or corps.get("data") or corps
+    if isinstance(transaction_data, str):
+        try:
+            transaction_data = json.loads(transaction_data)
+        except json.JSONDecodeError:
+            return Response({"detail": "Événement invalide."}, status=status.HTTP_400_BAD_REQUEST)
+    if isinstance(transaction_data, dict) and isinstance(transaction_data.get("object"), dict):
+        transaction_data = transaction_data["object"]
+    identifiant = transaction_data.get("id") if isinstance(transaction_data, dict) else None
+    paiement = PaiementAbonnementHistorique.objects.filter(fedapay_transaction_id=str(identifiant)).first() if identifiant else None
+    if paiement is None:
+        return Response(status=status.HTTP_200_OK)
+    actualiser_paiement(paiement)
+    return Response(status=status.HTTP_200_OK)
 
 
 @extend_schema(

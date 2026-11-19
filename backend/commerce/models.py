@@ -399,6 +399,7 @@ class PaiementAbonnementHistorique(models.Model):
     montant = models.DecimalField(max_digits=12, decimal_places=2, validators=[MinValueValidator(0)])
     statut = models.CharField(max_length=12, choices=Statut.choices, default=Statut.EN_ATTENTE)
     reference = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
+    fedapay_transaction_id = models.CharField(max_length=64, null=True, blank=True, unique=True)
     date_creation = models.DateTimeField(auto_now_add=True)
     date_validation = models.DateTimeField(null=True, blank=True)
 

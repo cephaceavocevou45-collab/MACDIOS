@@ -232,6 +232,11 @@ DEPLOYMENT_MAINTENANCE_TOKEN = config("DEPLOYMENT_MAINTENANCE_TOKEN", default=""
 NUMERO_MTN = config("NUMERO_MTN", default="").strip()
 NUMERO_MOOV = config("NUMERO_MOOV", default="").strip()
 NUMERO_CELTIIS = config("NUMERO_CELTIIS", default="").strip()
+FEDAPAY_SECRET_KEY = config("FEDAPAY_SECRET_KEY", default="").strip()
+FEDAPAY_WEBHOOK_SECRET = config("FEDAPAY_WEBHOOK_SECRET", default="").strip()
+FEDAPAY_ENVIRONMENT = config("FEDAPAY_ENVIRONMENT", default="sandbox").strip().lower()
+if FEDAPAY_ENVIRONMENT not in {"sandbox", "live"}:
+    raise ImproperlyConfigured("FEDAPAY_ENVIRONMENT doit valoir sandbox ou live.")
 PASSWORD_RESET_TIMEOUT = 15 * 60
 CSRF_TRUSTED_ORIGINS = config("CSRF_TRUSTED_ORIGINS", default="", cast=Csv())
 CORS_ALLOW_CREDENTIALS = True

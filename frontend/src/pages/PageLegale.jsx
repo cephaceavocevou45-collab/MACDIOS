@@ -10,7 +10,7 @@ const pages = {
       ["Objet", `${branding.appName} propose un outil de suivi des produits, des ventes, des clients et des dettes d’une boutique. Le service ne remplace pas les obligations comptables, fiscales ou réglementaires applicables à l’activité.`],
       ["Compte commerçant", "L’utilisateur fournit des informations exactes, protège ses identifiants et reste responsable des actions réalisées dans son compte. Il doit disposer des droits nécessaires pour saisir les données de ses clients."],
       ["Disponibilité et données", "Le service est fourni selon sa disponibilité. L’utilisateur reste responsable de ses justificatifs et peut exporter ou demander la suppression de son compte depuis les fonctions prévues."],
-      ["Abonnement et paiements", "Les tarifs et durées applicables sont affichés dans l’application avant paiement. Un paiement manuel n’active l’abonnement qu’après vérification par l’administration."],
+      ["Abonnement et paiements", "Les tarifs et durées applicables sont affichés dans l’application avant paiement. Le règlement est traité par FedaPay et l’abonnement n’est activé qu’après confirmation du paiement par le prestataire."],
       ["Contact", `Pour toute question, contactez-nous au ${branding.contact.telephone} ou par WhatsApp. Les présentes conditions doivent être examinées et validées avant leur entrée en vigueur.`],
     ],
   },

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { api, messageErreur } from "../api";
 import Badge from "../composants/Badge";
 import Button from "../composants/Button";
@@ -13,6 +13,7 @@ import { localePourLangue, TexteLocalise, useLangue } from "../contexte/LangueCo
 
 export default function Abonnement() {
   const { langue } = useLangue();
+  const [searchParams, setSearchParams] = useSearchParams();
   const fcfa = (montant) => `${Number(montant || 0).toLocaleString(localePourLangue(langue))} FCFA`;
   const dateLocale = (valeur, avecHeure = false) => new Intl.DateTimeFormat(
     localePourLangue(langue), avecHeure ? { dateStyle: "short", timeStyle: "short" } : { dateStyle: "medium" },
@@ -20,22 +21,15 @@ export default function Abonnement() {
   const [abonnement, setAbonnement] = useState(null);
   const [plans, setPlans] = useState([]);
   const [transactions, setTransactions] = useState([]);
-  const [demandes, setDemandes] = useState([]);
   const [planChoisi, setPlanChoisi] = useState(null);
-  const [operateurChoisi, setOperateurChoisi] = useState("");
-  const [referenceManuelle, setReferenceManuelle] = useState("");
-  const [preuve, setPreuve] = useState(null);
   const [chargement, setChargement] = useState(true);
   const [planEnCours, setPlanEnCours] = useState(null);
   const [erreur, setErreur] = useState("");
   const [planPage, setPlanPage] = useState(1);
   const [transactionPage, setTransactionPage] = useState(1);
-  const [demandePage, setDemandePage] = useState(1);
   const [nombrePlans, setNombrePlans] = useState(0);
   const [nombreTransactions, setNombreTransactions] = useState(0);
-  const [nombreDemandes, setNombreDemandes] = useState(0);
   const notifier = useToast();
-  const demandeEnAttente = demandes.some((demande) => demande.statut === "en_attente");
 
   const charger = useCallback(async () => {
     const [etat, offres, historique] = await Promise.all([
@@ -43,46 +37,43 @@ export default function Abonnement() {
       api.get("/api/plans/", { params: { page: planPage } }),
       api.get("/api/abonnement/transactions/", { params: { page: transactionPage } }),
     ]);
-    const demandesManuelles = etat.data.mode_paiement === "manuel"
-      ? await api.get("/api/abonnement/demandes/", { params: { page: demandePage } })
-      : { data: { count: 0, results: [] } };
     setAbonnement(etat.data);
     setPlans(extraireListe(offres.data));
     setNombrePlans(offres.data.count ?? extraireListe(offres.data).length);
     setTransactions(extraireListe(historique.data));
     setNombreTransactions(historique.data.count ?? extraireListe(historique.data).length);
-    setDemandes(extraireListe(demandesManuelles.data));
-    setNombreDemandes(demandesManuelles.data.count ?? extraireListe(demandesManuelles.data).length);
-  }, [planPage, transactionPage, demandePage]);
+  }, [planPage, transactionPage]);
 
   useEffect(() => {
     charger().catch((e) => setErreur(messageErreur(e))).finally(() => setChargement(false));
   }, [charger]);
 
+  useEffect(() => {
+    const reference = searchParams.get("paiement");
+    if (!reference) return;
+    api.get(`/api/abonnement/paiements/${reference}/`)
+      .then(({ data }) => {
+        if (data.statut === "reussi") notifier("Paiement confirmé. Votre abonnement est actif.", "success");
+        else if (data.statut === "echoue") notifier("Le paiement n’a pas abouti. Vous pouvez réessayer.", "error");
+        else notifier("Paiement en cours de confirmation. Revenez dans un instant.", "info");
+        return charger();
+      })
+      .catch((e) => notifier(messageErreur(e), "error"))
+      .finally(() => setSearchParams({}, { replace: true }));
+  }, [searchParams, setSearchParams, charger, notifier]);
+
   function commencerPaiement(plan) {
     setPlanChoisi(plan);
-    setOperateurChoisi("");
     setErreur("");
   }
 
-  async function envoyerDemande(event) {
-    event.preventDefault();
+  async function envoyerDemande() {
     if (!planChoisi) return;
     setPlanEnCours(planChoisi.id);
     setErreur("");
     try {
-      const contenu = new FormData();
-      contenu.append("plan", String(planChoisi.id));
-      contenu.append("operateur", operateurChoisi);
-      contenu.append("reference_transaction", referenceManuelle.trim());
-      if (preuve) contenu.append("preuve", preuve);
-      await api.post("/api/abonnement/demandes/", contenu, { headers: { "Content-Type": "multipart/form-data" } });
-      setReferenceManuelle("");
-      setPreuve(null);
-      setPlanChoisi(null);
-      setOperateurChoisi("");
-      await charger();
-      notifier("Demande reçue. Elle sera vérifiée par notre équipe.", "success");
+      const { data } = await api.post("/api/abonnement/paiements/", { plan_id: planChoisi.id });
+      window.location.assign(data.checkout_url);
     } catch (e) {
       const message = messageErreur(e);
       setErreur(message);
@@ -92,18 +83,12 @@ export default function Abonnement() {
     }
   }
 
-  async function telechargerRecu(demande) {
+  async function verifierPaiement(reference) {
     try {
-      const { data } = await api.get(`/api/abonnement/demandes/${demande.id}/recu/`, { responseType: "blob" });
-      const url = URL.createObjectURL(data);
-      const lien = document.createElement("a");
-      lien.href = url;
-      lien.download = `recu-abonnement-${demande.id}.pdf`;
-      lien.click();
-      URL.revokeObjectURL(url);
-    } catch (e) {
-      notifier(messageErreur(e), "error");
-    }
+      const { data } = await api.get(`/api/abonnement/paiements/${reference}/`);
+      await charger();
+      notifier(data.statut === "reussi" ? "Paiement confirmé. Votre abonnement est actif." : data.statut === "echoue" ? "Le paiement n’a pas abouti." : "Le paiement est toujours en cours de confirmation.", data.statut === "reussi" ? "success" : "info");
+    } catch (e) { notifier(messageErreur(e), "error"); }
   }
 
   if (chargement) return <Chargement texte="Chargement de votre abonnement…"/>;
@@ -128,13 +113,12 @@ export default function Abonnement() {
       </Card>}
 
       <section className="page-stack">
-        <div><h2 className="m-0 text-xl font-bold">{<TexteLocalise phrase={"Choisir une formule"} />}</h2><p className="mt-1 text-sm text-ink-muted">{<TexteLocalise phrase={"Paiement Mobile Money avec vérification par notre équipe."} />}</p></div>
-        {demandeEnAttente && <Card><p className="m-0 text-sm font-semibold text-amber-800">{<TexteLocalise phrase={"Une demande de paiement est déjà en attente de vérification. Vous pourrez choisir une nouvelle formule après son traitement."} />}</p></Card>}
+        <div><h2 className="m-0 text-xl font-bold">{<TexteLocalise phrase={"Choisir une formule"} />}</h2><p className="mt-1 text-sm text-ink-muted">Paiement sécurisé par FedaPay (Mobile Money et moyens disponibles selon votre compte).</p></div>
         {plans.length === 0 ? <Card><p className="m-0 text-ink-muted">{<TexteLocalise phrase={"Aucune formule payante n’est disponible pour le moment."} />}</p></Card> :
           <div className="grid gap-4 md:grid-cols-2">{plans.map((plan) => <Card key={plan.id} className="subscription-plan">
             <div className="flex items-center justify-between gap-3"><h3 className="m-0 text-lg font-bold">{plan.nom}</h3><Icon name="spark" className="text-brand"/></div>
             <p className="my-4 text-3xl font-bold tracking-tight">{fcfa(plan.prix)}<span className="ml-1 text-sm font-medium text-ink-muted">/ {plan.duree_jours}{' '}{<TexteLocalise phrase={"jours"} />}</span></p>
-            <Button className="w-full" disabled={planEnCours !== null || demandeEnAttente} onClick={() => commencerPaiement(plan)}>
+            <Button className="w-full" disabled={planEnCours !== null} onClick={() => commencerPaiement(plan)}>
               <><Icon name="wallet"/>{<TexteLocalise phrase={"Choisir cette formule"} />}</>
             </Button>
           </Card>)}</div>}
@@ -142,51 +126,9 @@ export default function Abonnement() {
       </section>
 
       {planChoisi && <Card>
-        <h2 className="m-0 text-xl font-bold">{<TexteLocalise phrase={"Payer"} />}{' '}{planChoisi.nom}{' '}{<TexteLocalise phrase={"par Mobile Money"} />}</h2>
-        {!(abonnement.operateurs_paiement || []).length ? <div className="my-4 rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm leading-6 text-amber-950" role="status">
-          <strong>{<TexteLocalise phrase={"Le paiement Mobile Money n’est pas configuré sur le serveur."} />}</strong>
-          <p className="mb-0 mt-1">{<TexteLocalise phrase={"Aucun numéro d’opérateur n’a été transmis par le backend. Vérifiez les variables NUMERO_MTN, NUMERO_MOOV ou NUMERO_CELTIIS dans le fichier .env du backend, puis redémarrez Django. Ne faites pas de transfert avant que le numéro du bénéficiaire s’affiche ici."} />}</p>
-        </div> : <>
-        <div className="my-4 rounded-xl bg-brand/5 p-4 text-base leading-7">
-          <p className="m-0">{<TexteLocalise phrase={"1. Choisissez l’opérateur utilisé pour votre transfert. Le numéro s’affichera après votre choix."} />}</p>
-        </div>
-        <fieldset className="mb-4 grid gap-3 border-0 p-0 sm:grid-cols-3">
-          <legend className="mb-2 text-sm font-semibold">{<TexteLocalise phrase={"Votre opérateur Mobile Money"} />}</legend>
-          {(abonnement.operateurs_paiement || []).map((operateur) => <label key={operateur.code} className={`cursor-pointer rounded-xl border p-4 ${operateurChoisi === operateur.code ? "border-brand bg-brand/5" : "border-line bg-white"}`}>
-            <span className="flex items-center gap-2 font-bold"><input type="radio" name="operateur" value={operateur.code} checked={operateurChoisi === operateur.code} onChange={() => setOperateurChoisi(operateur.code)}/>{operateur.nom}</span>
-          </label>)}
-        </fieldset>
-        {operateurChoisi && (() => {
-          const operateur = abonnement.operateurs_paiement.find((item) => item.code === operateurChoisi);
-          return operateur ? <>
-            <div className="my-4 rounded-xl bg-brand/5 p-4 text-base leading-7">
-              <p className="m-0">{<TexteLocalise phrase={"2. Transférez exactement"} />}{' '}<strong>{fcfa(planChoisi.prix)}</strong>{' '}{<TexteLocalise phrase={"via"} />}{' '}{operateur.nom}{' '}{<TexteLocalise phrase={"au numéro :"} />}</p>
-              <p className="my-2 text-2xl font-bold tracking-wide">{operateur.numero}</p>
-              <p className="m-0">{<TexteLocalise phrase={"3. Recopiez la référence reçue par SMS. Vous pourrez joindre une capture d’écran du transfert."} />}</p>
-            </div>
-            <form className="grid gap-4" onSubmit={envoyerDemande}>
-              <label className="grid gap-2 text-sm font-semibold">{<TexteLocalise phrase={"Référence du transfert"} />}<input className="field-control" value={referenceManuelle} onChange={(event) => setReferenceManuelle(event.target.value)} required maxLength={120} />
-              </label>
-              <label className="grid gap-2 text-sm font-semibold">{<TexteLocalise phrase={"Capture d’écran (facultative, 5 Mo maximum)"} />}<input className="field-control" type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => setPreuve(event.target.files?.[0] || null)} />
-              </label>
-              <div className="flex flex-wrap gap-3"><Button type="submit" disabled={planEnCours !== null || !operateurChoisi}>{planEnCours ? "Envoi…" : "J’ai payé"}</Button><Button type="button" variant="secondary" onClick={() => { setPlanChoisi(null); setOperateurChoisi(""); }}>{<TexteLocalise phrase={"Annuler"} />}</Button></div>
-            </form>
-          </> : null;
-        })()}
-        </>}
+        <p className="my-4 text-ink-muted">Vous allez être redirigé vers FedaPay pour régler {fcfa(planChoisi.prix)}. L’abonnement s’active après confirmation du paiement.</p>
+        <div className="flex flex-wrap gap-3"><Button disabled={planEnCours !== null} onClick={envoyerDemande}>{planEnCours ? "Ouverture de FedaPay…" : "Continuer vers FedaPay"}</Button><Button variant="secondary" onClick={() => setPlanChoisi(null)}>Annuler</Button></div>
       </Card>}
-      {demandes.length > 0 && <section className="page-stack">
-        <div><h2 className="m-0 text-xl font-bold">{<TexteLocalise phrase={"Mes demandes de paiement"} />}</h2><p className="mt-1 text-sm text-ink-muted">{<TexteLocalise phrase={"Une demande en attente bloque un nouvel envoi."} />}</p></div>
-        {demandes.map((demande) => <Card key={demande.id} className="grid gap-3 sm:grid-cols-[1fr_auto] sm:items-center">
-          <div><strong>{demande.plan_nom} · {fcfa(demande.montant)}</strong><p className="m-0 mt-1 text-sm text-ink-muted">{demande.operateur_nom || demande.operateur || <TexteLocalise phrase={"Opérateur non renseigné"}/>}{' '}{<TexteLocalise phrase={"· Demande du"} />}{' '}{dateLocale(demande.date_demande, true)}</p>
-            {demande.statut === "en_attente" && <p className="m-0 mt-2 font-semibold text-amber-700">{<TexteLocalise phrase={"En attente de vérification. Vous serez notifié dès que votre paiement sera validé."} />}</p>}
-            {demande.statut === "rejetee" && <p className="m-0 mt-2 text-red-700">{<TexteLocalise phrase={"Demande rejetée :"} />}{' '}{demande.motif_rejet}</p>}
-            {demande.statut === "validee" && <p className="m-0 mt-2 font-semibold text-emerald-700">{<TexteLocalise phrase={"Paiement vérifié, votre abonnement est actif jusqu’au"} />}{' '}{dateLocale(abonnement.date_fin)}.</p>}
-          </div>
-          <div className="flex items-center gap-3"><Badge tone={demande.statut === "validee" ? "green" : demande.statut === "rejetee" ? "red" : "orange"}>{demande.statut === "validee" ? "Validée" : demande.statut === "rejetee" ? "Rejetée" : "En attente"}</Badge>{demande.statut === "validee" && <Button onClick={() => telechargerRecu(demande)}>{<TexteLocalise phrase={"Télécharger le reçu (PDF)"} />}</Button>}</div>
-        </Card>)}
-        <Pagination page={demandePage} count={nombreDemandes} onChange={setDemandePage}/>
-      </section>}
 
       <section className="page-stack">
         <div><h2 className="m-0 text-xl font-bold">{<TexteLocalise phrase={"Historique des paiements"} />}</h2><p className="mt-1 text-sm text-ink-muted">{<TexteLocalise phrase={"État des paiements liés à votre compte."} />}</p></div>
@@ -195,6 +137,7 @@ export default function Abonnement() {
             <div><strong>{transaction.plan_nom}</strong><small>{dateLocale(transaction.date_creation, true)}</small></div>
             <strong>{fcfa(transaction.montant)}</strong>
             <Badge tone={transaction.statut === "reussi" ? "green" : transaction.statut === "echoue" ? "red" : "orange"}>{transaction.statut === "reussi" ? "Réussi" : transaction.statut === "echoue" ? "Échoué" : "En attente"}</Badge>
+            {transaction.statut === "en_attente" && <Button variant="secondary" onClick={() => verifierPaiement(transaction.reference)}>Vérifier l’état</Button>}
           </Card>)}</div>}
         <Pagination page={transactionPage} count={nombreTransactions} onChange={setTransactionPage}/>
       </section>
