@@ -12,7 +12,8 @@ export default function ScannerCodeProduit({ onDetecte }) {
   const videoRef = useRef(null);
   const fluxRef = useRef(null);
   const onDetecteRef = useRef(onDetecte);
-  onDetecteRef.current = onDetecte;
+
+  useEffect(() => { onDetecteRef.current = onDetecte; }, [onDetecte]);
 
   useEffect(() => {
     if (!ouvert) return undefined;
