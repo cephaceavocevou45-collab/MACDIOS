@@ -25,6 +25,15 @@ button { cursor: pointer; }
   .field-hint { @apply block text-xs text-ink-muted; }
 }
 
+.password-field-wrap { position: relative; display: block; }
+.password-field-control { padding-right: 3.25rem !important; }
+.password-visibility-toggle { position: absolute; top: 50%; right: .75rem; display: inline-flex; width: 2rem; height: 2rem; align-items: center; justify-content: center; transform: translateY(-50%); border: 0; border-radius: .5rem; background: transparent; color: #60736c; }
+.password-visibility-toggle:hover { background: #edf5f1; color: #0c765c; }
+.password-visibility-toggle:focus-visible { outline: 2px solid #0c765c; outline-offset: 2px; }
+.admin-password-wrap { position: relative; display: block; }
+.admin-password-wrap input { padding-right: 38px !important; }
+.admin-password-wrap .password-visibility-toggle { right: 5px; width: 28px; height: 28px; }
+
 :root { --brand: #0c765c; --brand-dark: #075b47; --accent: #f3a94c; --line: #e4ebe6; --ink: #152b25; --muted: #60736c; }
 
 /* Éléments partagés de l'espace commerçant */

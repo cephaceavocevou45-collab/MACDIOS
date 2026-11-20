@@ -966,6 +966,10 @@ Object.assign(TEXTES.ar, {
   "Nom du produit ou code-barres": "اسم المنتج أو الباركود", "Un lecteur de codes-barres USB ou Bluetooth peut être utilisé comme un clavier.": "يمكن استخدام قارئ باركود USB أو Bluetooth مثل لوحة المفاتيح.",
   "Aucun produit ne correspond à ce code-barres.": "لا يوجد منتج يطابق هذا الباركود.", "Ce produit est en rupture de stock.": "هذا المنتج غير متوفر في المخزون.",
 });
+Object.assign(TEXTES.en, { "Afficher le mot de passe": "Show password", "Masquer le mot de passe": "Hide password" });
+Object.assign(TEXTES.es, { "Afficher le mot de passe": "Mostrar contraseña", "Masquer le mot de passe": "Ocultar contraseña" });
+Object.assign(TEXTES.pt, { "Afficher le mot de passe": "Mostrar palavra-passe", "Masquer le mot de passe": "Ocultar palavra-passe" });
+Object.assign(TEXTES.ar, { "Afficher le mot de passe": "إظهار كلمة المرور", "Masquer le mot de passe": "إخفاء كلمة المرور" });
 
 export function traduire(phrase, langue = langueCourante) {
   return TEXTES[langue]?.[phrase] || phrase;
