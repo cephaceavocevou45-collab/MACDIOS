@@ -2,13 +2,17 @@ import math
 import logging
 from datetime import timedelta
 from decimal import Decimal
+import io
+import warnings
 
 from django.conf import settings
 from django.contrib.auth import authenticate, get_user_model
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError as DjangoValidationError
+from django.core.files.base import ContentFile
 from django.db import transaction
 from django.utils import timezone
+from PIL import Image
 from rest_framework import serializers
 from drf_spectacular.utils import extend_schema_field
 
@@ -499,12 +503,49 @@ class PaiementAbonnementHistoriqueSerializer(serializers.ModelSerializer):
 
 
 class PreuveImageField(serializers.ImageField):
-    """Applique la limite avant que Pillow ne tente de décoder le fichier."""
+    """Limite et réencode les preuves avant leur stockage privé."""
 
     def to_internal_value(self, data):
-        if data is not None and getattr(data, "size", 0) > 5 * 1024 * 1024:
+        limite_octets = 5 * 1024 * 1024
+        if data is not None and getattr(data, "size", 0) > limite_octets:
             raise serializers.ValidationError("La preuve ne doit pas dépasser 5 Mo.")
-        return super().to_internal_value(data)
+        fichier = super().to_internal_value(data)
+        try:
+            contenu = fichier.read()
+            fichier.seek(0)
+            with warnings.catch_warnings():
+                warnings.simplefilter("error", Image.DecompressionBombWarning)
+                image = Image.open(io.BytesIO(contenu))
+                format_image = image.format
+                if format_image not in {"JPEG", "PNG", "WEBP"}:
+                    raise serializers.ValidationError("Joignez une image JPEG, PNG ou WEBP.")
+                if image.width * image.height > 20_000_000:
+                    raise serializers.ValidationError("Les dimensions de la preuve sont trop importantes.")
+                image.verify()
+                image = Image.open(io.BytesIO(contenu))
+                image.load()
+                if format_image == "JPEG":
+                    image = image.convert("RGB")
+                    extension = "jpg"
+                    options = {"quality": 90, "optimize": True}
+                elif format_image == "PNG":
+                    image = image.convert("RGBA" if "A" in image.getbands() else "RGB")
+                    extension = "png"
+                    options = {"optimize": True}
+                else:
+                    image = image.convert("RGBA" if "A" in image.getbands() else "RGB")
+                    extension = "webp"
+                    options = {"quality": 90, "method": 4}
+                sortie = io.BytesIO()
+                image.save(sortie, format=format_image, **options)
+                contenu = sortie.getvalue()
+        except serializers.ValidationError:
+            raise
+        except Exception as erreur:
+            raise serializers.ValidationError("Le fichier envoyé n'est pas une image valide.") from erreur
+        if len(contenu) > limite_octets:
+            raise serializers.ValidationError("La preuve optimisée dépasse la limite de 5 Mo.")
+        return ContentFile(contenu, name=f"preuve.{extension}")
 
 
 class DemandePaiementManuelSerializer(serializers.ModelSerializer):
