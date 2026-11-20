@@ -12,7 +12,7 @@ _audit_active = ContextVar("audit_active", default=True)
 
 # Une liste explicite évite d'ajouter par mégarde un champ secret au journal.
 CHAMPS_AUDITES = {
-    "Produit": ("nom", "code_barres", "prix", "prix_achat", "quantite_stock", "seuil_alerte", "actif"),
+    "Produit": ("nom", "code_barres", "prix", "prix_achat", "quantite_stock", "seuil_alerte", "date_peremption", "actif"),
     "Client": ("nom", "actif"),  # Le téléphone du client ne quitte jamais la table métier.
     "Vente": ("produit_id", "client_id", "quantite", "prix_unitaire", "total"),
     "Dette": ("client_id", "montant", "note"),

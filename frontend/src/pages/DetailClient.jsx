@@ -4,6 +4,7 @@ import { api, messageErreur } from "../api";
 import Badge from "../composants/Badge";
 import Button from "../composants/Button";
 import Card from "../composants/Card";
+import DicteeVocale from "../composants/DicteeVocale";
 import Icon from "../composants/Icon";
 import Input from "../composants/Input";
 import Modal from "../composants/Modal";
@@ -11,6 +12,7 @@ import { SkeletonCard } from "../composants/Skeleton";
 import { useToast } from "../composants/ToastProvider";
 import Pagination from "../composants/Pagination";
 import { afficherDate, formaterFCFA } from "../utils";
+import { extraireChampsDictee } from "../utils/dicteeVocale";
 import { TexteLocalise, traduire } from "../contexte/LangueContext";
 
 export default function DetailClient() {
@@ -49,6 +51,17 @@ export default function DetailClient() {
 
   function fermer() {
     setAction(""); setDetteChoisie(null); setMontant(""); setNote(""); setRaison(""); setErreur("");
+  }
+
+  function dicterOperation(phrase) {
+    const champs = extraireChampsDictee(phrase, {
+      montant: { aliases: ["nouveau montant", "montant", "somme", "amount"], type: "number" },
+      note: { aliases: ["note", "motif", "description"] },
+      raison: { aliases: ["raison", "explication", "reason"] },
+    }, null);
+    if (champs.montant) setMontant(champs.montant);
+    if (champs.note) setNote(champs.note);
+    if (champs.raison) setRaison(champs.raison);
   }
 
   async function envoyer(event) {
@@ -105,6 +118,7 @@ export default function DetailClient() {
 
     <Modal open={Boolean(action)} title={action === "dette" ? "Ajouter une dette" : action === "paiement" ? "Enregistrer un paiement" : "Corriger le montant"} onClose={fermer}>
       <form onSubmit={envoyer} className="grid gap-4"><p className="m-0 text-sm text-ink-muted">{<TexteLocalise phrase={"Client :"} />}{' '}<strong className="text-ink">{client.nom}</strong></p>
+        <DicteeVocale onTranscription={dicterOperation} aide={action === "paiement" ? "Dictez le montant à enregistrer. Exemple : montant 5 000." : action === "correction" ? "Dictez le nouveau montant et la raison. Exemple : nouveau montant 4 000, raison erreur de saisie." : "Dictez le montant de la dette et, si besoin, une note. Exemple : montant 5 000, note achat de marchandises."}/>
         {action === "correction" && <p className="m-0 text-sm text-ink-muted">{<TexteLocalise phrase={"Montant actuel :"} />}{' '}<strong className="text-ink">{formaterFCFA(detteChoisie?.montant)}</strong>{<TexteLocalise phrase={". L’ancien montant et la raison resteront dans l’historique."} />}</p>}
         <Input label={action === "correction" ? "Nouveau montant (FCFA)" : "Montant (FCFA)"} type="number" min="1" step="1" required value={montant} onChange={(event) => setMontant(event.target.value)} placeholder={traduire("Ex. 5 000")}/>
         {action === "dette" && <Input label="Note (facultative)" value={note} onChange={(event) => setNote(event.target.value)} placeholder={traduire("Ex. Achat de marchandises")}/>}

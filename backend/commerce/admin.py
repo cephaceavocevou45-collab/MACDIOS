@@ -42,7 +42,7 @@ class CommercantAdmin(UserAdmin):
 
 @admin.register(Produit)
 class ProduitAdmin(admin.ModelAdmin):
-    list_display = ("nom", "commercant", "prix", "quantite_stock", "seuil_alerte", "actif")
+    list_display = ("nom", "commercant", "prix", "quantite_stock", "seuil_alerte", "date_peremption", "actif")
     list_filter = ("commercant", "actif")
     search_fields = ("nom", "commercant__telephone", "commercant__nom_boutique")
 

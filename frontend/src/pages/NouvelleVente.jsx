@@ -3,10 +3,12 @@ import { Link } from "react-router-dom";
 import { api, messageErreur } from "../api";
 import Button from "../composants/Button";
 import Card from "../composants/Card";
+import DicteeVocale from "../composants/DicteeVocale";
 import Icon from "../composants/Icon";
 import { SkeletonCard } from "../composants/Skeleton";
 import { useToast } from "../composants/ToastProvider";
 import { extraireListe, formaterFCFA } from "../utils";
+import { extraireChampsDictee, lireNombreDicte } from "../utils/dicteeVocale";
 import { TexteLocalise, traduire } from "../contexte/LangueContext";
 
 export default function NouvelleVente() {
@@ -17,7 +19,20 @@ export default function NouvelleVente() {
   const notifier=useToast();
   useEffect(()=>{let actif=true;const delai=setTimeout(async()=>{try{const [p,c]=await Promise.all([api.get("/api/produits/",{params:{page_size:100,recherche:rechercheProduit||undefined}}),api.get("/api/clients/",{params:{page_size:100,recherche:rechercheClient||undefined}})]);if(actif){setProduits(extraireListe(p.data));setClients(extraireListe(c.data));}}catch(error){const texte=messageErreur(error);if(actif){setErreur(texte);notifier(texte,"error");}}finally{if(actif)setChargement(false);}},250);return()=>{actif=false;clearTimeout(delai);};},[rechercheProduit,rechercheClient,notifier]);
   const produit=produits.find((p)=>String(p.id)===produitId);
+  useEffect(()=>{const match=produits.find((p)=>p.nom.trim().toLocaleLowerCase()===rechercheProduit.trim().toLocaleLowerCase());if(match)setProduitId(String(match.id));},[produits,rechercheProduit]);
+  useEffect(()=>{const match=clients.find((c)=>c.nom.trim().toLocaleLowerCase()===rechercheClient.trim().toLocaleLowerCase());if(match)setClientId(String(match.id));},[clients,rechercheClient]);
   const total=useMemo(()=>Number(produit?.prix||0)*Number(quantite||0),[produit,quantite]);
+  function dicterVente(phrase,{final=false}={}){
+    const champs=extraireChampsDictee(phrase,{
+      produit:{aliases:["produit","article","product","producto","produto"]},
+      quantite:{aliases:["quantite vendue","quantite","qte","quantity","cantidad","quantidade"],type:"number"},
+      client:{aliases:["client","customer","cliente","comprador"]},
+    },"produit");
+    if(champs.produit)setRechercheProduit(champs.produit);
+    if(champs.quantite)setQuantite(lireNombreDicte(champs.quantite));
+    if(champs.client)setRechercheClient(champs.client);
+    if(final){if(champs.produit)setProduitId("");if(champs.client)setClientId("");}
+  }
   async function selectionnerCodeBarres(code) {
     const valeur = code.trim();
     if (!valeur) return;
@@ -39,6 +54,7 @@ export default function NouvelleVente() {
     {erreur&&<div className="alert-box mb-4" role="alert">{erreur}</div>}
     {disponibles.length===0?<Card className="empty-state"><span className="empty-icon"><Icon name="cart" size={25}/></span><h3>{<TexteLocalise phrase={"Aucun produit en stock"} />}</h3><p>{<TexteLocalise phrase={"Ajoutez un produit ou mettez à jour les quantités avant d’enregistrer une vente."} />}</p><Link to="/produits" className="btn-primary mt-2">{<TexteLocalise phrase={"Gérer les produits"} />}{' '}<Icon name="arrow" size={16}/></Link></Card>:
       <div className="sale-layout"><Card className="sale-form-card"><form onSubmit={enregistrer} className="sale-form">
+        <DicteeVocale onTranscription={dicterVente} aide="Dictez le produit, la quantité et éventuellement le client. Exemple : Riz local, quantité vendue 3, client Awa."/>
         <label className="field-wrap"><span className="field-label">{<TexteLocalise phrase={"Rechercher un produit"} />}</span><input className="field-control" value={rechercheProduit} onChange={(e)=>{setRechercheProduit(e.target.value);setProduitId("");}} onKeyDown={(event)=>{if(event.key==="Enter"){event.preventDefault();selectionnerCodeBarres(rechercheProduit);}}} placeholder={traduire("Nom du produit ou code-barres")}/><span className="field-hint"><TexteLocalise phrase="Un lecteur de codes-barres USB ou Bluetooth peut être utilisé comme un clavier."/></span></label>
         <label className="field-wrap"><span className="field-label">{<TexteLocalise phrase={"Produit vendu"} />}</span><select className="field-control" required value={produitId} onChange={(e)=>setProduitId(e.target.value)}><option value="">{<TexteLocalise phrase={"Sélectionner dans les résultats"} />}</option>{disponibles.map((p)=><option key={p.id} value={p.id}>{p.nom} — {formaterFCFA(p.prix)}</option>)}</select></label>
         {produit&&<div className="sale-product-hint"><span className="product-icon"><Icon name="box" size={19}/></span><span><strong>{produit.nom}</strong><small>{produit.quantite_stock}{' '}{<TexteLocalise phrase={"unités disponibles"} />}</small></span><strong className="ml-auto">{formaterFCFA(produit.prix)}</strong></div>}

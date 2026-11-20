@@ -80,7 +80,7 @@ EXEMPLE_NON_AUTORISE = OpenApiResponse(
 
 EXEMPLE_PRODUIT = OpenApiExample(
     "Produit courant",
-    value={"id": 1, "nom": "Riz", "prix": "1000.00", "prix_achat": "700.00", "quantite_stock": 18, "seuil_alerte": 5, "date_creation": "2026-09-28T12:00:00Z"},
+    value={"id": 1, "nom": "Riz", "code_barres": "3760123456789", "prix": "1000.00", "prix_achat": "700.00", "quantite_stock": 18, "seuil_alerte": 5, "date_peremption": "2027-06-30", "date_creation": "2026-09-28T12:00:00Z"},
     response_only=True,
 )
 EXEMPLE_CLIENT = OpenApiExample(

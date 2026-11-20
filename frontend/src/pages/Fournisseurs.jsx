@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { api, messageErreur } from "../api";
 import Button from "../composants/Button";
 import Card from "../composants/Card";
+import DicteeVocale from "../composants/DicteeVocale";
 import Icon from "../composants/Icon";
 import Input from "../composants/Input";
 import Modal from "../composants/Modal";
@@ -9,6 +10,7 @@ import Pagination from "../composants/Pagination";
 import { SkeletonCard } from "../composants/Skeleton";
 import { useToast } from "../composants/ToastProvider";
 import { extraireListe } from "../utils";
+import { extraireChampsDictee } from "../utils/dicteeVocale";
 import { TexteLocalise } from "../contexte/LangueContext";
 
 const formulaireVide = { nom: "", telephone: "", email: "", adresse: "" };
@@ -35,6 +37,16 @@ export default function Fournisseurs() {
   }, [page, recherche]);
   useEffect(() => { charger(); }, [charger]);
 
+  function dicterFournisseur(phrase) {
+    const champs = extraireChampsDictee(phrase, {
+      nom: { aliases: ["nom du fournisseur", "fournisseur", "nom", "supplier", "name"] },
+      telephone: { aliases: ["telephone", "numero de telephone", "phone", "tel"], type: "phone" },
+      email: { aliases: ["adresse email", "email", "courriel"], type: "email" },
+      adresse: { aliases: ["adresse", "address", "location"] },
+    });
+    if (Object.keys(champs).length) setFormulaire((ancien) => ({ ...ancien, ...champs }));
+  }
+
   async function enregistrer(event) {
     event.preventDefault(); setEnvoi(true); setErreur("");
     try {
@@ -53,6 +65,7 @@ export default function Fournisseurs() {
     <div className="page-heading"><div><span className="form-eyebrow"><TexteLocalise phrase="Achats et stock"/></span><h1><TexteLocalise phrase="Fournisseurs"/></h1><p><TexteLocalise phrase="Centralisez les contacts des entreprises qui approvisionnent votre boutique."/></p></div></div>
     {erreur && <div className="alert-box mb-4" role="alert">{erreur}</div>}
     <Card className="mb-5"><div className="section-card-heading"><div><h2><TexteLocalise phrase="Ajouter un fournisseur"/></h2><p><TexteLocalise phrase="Les coordonnées restent privées dans votre espace."/></p></div></div>
+      <DicteeVocale onTranscription={dicterFournisseur} aide="Dictez le nom du fournisseur, puis son téléphone, son adresse email et son adresse. Exemple : Fournisseur Awa, téléphone +229 01 02 03 04 05, email awa@example.com, adresse Cotonou."/>
       <form className="form-grid" onSubmit={enregistrer}>
         <Input label="Nom du fournisseur" required maxLength={160} value={formulaire.nom} onChange={(event) => setFormulaire({ ...formulaire, nom: event.target.value })}/>
         <Input label="Téléphone" type="tel" maxLength={32} value={formulaire.telephone} onChange={(event) => setFormulaire({ ...formulaire, telephone: event.target.value })}/>

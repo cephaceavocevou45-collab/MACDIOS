@@ -4,12 +4,14 @@ import { api, messageErreur } from "../api";
 import { TexteLocalise, traduire } from "../contexte/LangueContext";
 import Button from "../composants/Button";
 import Card from "../composants/Card";
+import DicteeVocale from "../composants/DicteeVocale";
 import Icon from "../composants/Icon";
 import Input from "../composants/Input";
 import Pagination from "../composants/Pagination";
 import { SkeletonCard } from "../composants/Skeleton";
 import { useToast } from "../composants/ToastProvider";
 import { extraireListe, formaterFCFA } from "../utils";
+import { extraireChampsDictee } from "../utils/dicteeVocale";
 
 const ligneVide = () => ({ produit: "", quantite: "1", prix_achat_unitaire: "" });
 
@@ -65,6 +67,50 @@ export default function Approvisionnements() {
     setFormulaire((ancien) => ({ ...ancien, lignes: ancien.lignes.map((ligne, i) => i === index ? { ...ligne, [cle]: valeur } : ligne) }));
   }
 
+  async function dicterReception(phrase, { final = false } = {}) {
+    const champs = extraireChampsDictee(phrase, {
+      fournisseur: { aliases: ["fournisseur", "supplier"] },
+      reference: { aliases: ["reference", "numero de recu", "numero de facture", "ref"] },
+      note: { aliases: ["note", "remarque", "observation"] },
+      produit: { aliases: ["produit", "article", "product", "producto", "produto"] },
+      quantite: { aliases: ["quantite recue", "quantite", "qte", "quantity", "cantidad", "quantidade"], type: "number" },
+      prix_achat_unitaire: { aliases: ["cout d'achat unitaire", "prix d'achat unitaire", "prix d'achat", "purchase price", "cost price"], type: "number" },
+    }, "produit");
+    setFormulaire((ancien) => ({
+      ...ancien,
+      ...(champs.reference ? { reference: champs.reference } : {}),
+      ...(champs.note ? { note: champs.note } : {}),
+      lignes: ancien.lignes.map((ligne, index) => index === 0 ? {
+        ...ligne,
+        ...(champs.quantite ? { quantite: champs.quantite } : {}),
+        ...(champs.prix_achat_unitaire ? { prix_achat_unitaire: champs.prix_achat_unitaire } : {}),
+      } : ligne),
+    }));
+    if (champs.produit) setRechercheProduit(champs.produit);
+    if (!final) return;
+
+    const cleNom = (nom) => nom.trim().toLocaleLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    if (champs.fournisseur) {
+      setRechercheFournisseur(champs.fournisseur);
+      try {
+        const { data } = await api.get("/api/fournisseurs/", { params: { recherche: champs.fournisseur, page_size: 100 } });
+        const resultats = extraireListe(data);
+        setFournisseurs((anciens) => [...new Map([...anciens, ...resultats].map((item) => [item.id, item])).values()]);
+        const correspondance = resultats.find((item) => cleNom(item.nom) === cleNom(champs.fournisseur));
+        if (correspondance) setFormulaire((ancien) => ({ ...ancien, fournisseur: String(correspondance.id) }));
+      } catch { /* La recherche reste disponible dans le champ du formulaire. */ }
+    }
+    if (champs.produit) {
+      try {
+        const { data } = await api.get("/api/produits/", { params: { recherche: champs.produit, page_size: 100 } });
+        const resultats = extraireListe(data);
+        setProduits((anciens) => [...new Map([...anciens, ...resultats].map((item) => [item.id, item])).values()]);
+        const correspondance = resultats.find((item) => cleNom(item.nom) === cleNom(champs.produit));
+        if (correspondance) changerLigne(0, "produit", String(correspondance.id));
+      } catch { /* La recherche reste disponible dans le champ du formulaire. */ }
+    }
+  }
+
   async function enregistrer(event) {
     event.preventDefault(); setErreur(""); setEnvoi(true);
     const idsProduits = formulaire.lignes.map((ligne) => ligne.produit).filter(Boolean);
@@ -88,6 +134,7 @@ export default function Approvisionnements() {
     <div className="page-heading"><div><span className="form-eyebrow"><TexteLocalise phrase="Achats et stock"/></span><h1><TexteLocalise phrase="Réception de marchandises"/></h1><p><TexteLocalise phrase="Enregistrez les achats reçus pour augmenter le stock et actualiser le coût d’achat des produits."/></p></div><Link className="btn-secondary" to="/mouvements-stock"><Icon name="clock" size={17}/><TexteLocalise phrase="Mouvements de stock"/></Link></div>
     {erreur && <div className="alert-box mb-4" role="alert">{erreur}</div>}
     <Card className="mb-6"><div className="section-card-heading"><div><h2><TexteLocalise phrase="Nouvelle réception"/></h2><p><TexteLocalise phrase="Une réception confirmée ne peut pas être appliquée deux fois au stock."/></p></div></div>
+      <DicteeVocale onTranscription={dicterReception} aide="Dictez le fournisseur, la référence si besoin, puis le produit, la quantité reçue et le coût d’achat unitaire. Exemple : fournisseur Awa, référence FAC 25, produit Riz local, quantité reçue 20, coût d’achat unitaire 800."/>
       <form className="space-y-5" onSubmit={enregistrer}>
         <div className="form-grid">
           <div className="space-y-2"><Input label="Rechercher un fournisseur" value={rechercheFournisseur} onChange={(e) => setRechercheFournisseur(e.target.value)}/><label className="field-wrap"><span className="field-label"><TexteLocalise phrase="Fournisseur"/></span><select className="field-control" value={formulaire.fournisseur} onChange={(e) => setFormulaire({ ...formulaire, fournisseur: e.target.value })}><option value=""><TexteLocalise phrase="Sans fournisseur"/></option>{fournisseurs.map((f) => <option key={f.id} value={f.id}>{f.nom}</option>)}</select></label></div>

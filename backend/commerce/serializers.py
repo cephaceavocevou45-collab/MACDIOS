@@ -190,7 +190,7 @@ class ConnexionSerializer(serializers.Serializer):
 class ProduitSerializer(serializers.ModelSerializer):
     class Meta:
         model = Produit
-        fields = ["id", "nom", "code_barres", "prix", "prix_achat", "quantite_stock", "seuil_alerte", "date_creation", "actif"]
+        fields = ["id", "nom", "code_barres", "prix", "prix_achat", "quantite_stock", "seuil_alerte", "date_peremption", "date_creation", "actif"]
         read_only_fields = ["id", "date_creation", "actif"]
 
     def validate_code_barres(self, valeur):

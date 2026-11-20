@@ -167,6 +167,7 @@ class Produit(models.Model):
     )
     quantite_stock = models.PositiveIntegerField(default=0)
     seuil_alerte = models.PositiveIntegerField(default=5)
+    date_peremption = models.DateField(null=True, blank=True)
     date_creation = models.DateTimeField(auto_now_add=True)
     # L'archivage masque le produit sans casser les références des ventes.
     actif = models.BooleanField(default=True, db_index=True)
