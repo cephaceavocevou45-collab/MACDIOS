@@ -30,6 +30,14 @@ button { cursor: pointer; }
 .password-visibility-toggle { position: absolute; top: 50%; right: .75rem; display: inline-flex; width: 2rem; height: 2rem; align-items: center; justify-content: center; transform: translateY(-50%); border: 0; border-radius: .5rem; background: transparent; color: #60736c; }
 .password-visibility-toggle:hover { background: #edf5f1; color: #0c765c; }
 .password-visibility-toggle:focus-visible { outline: 2px solid #0c765c; outline-offset: 2px; }
+.pwa-install-card { position: fixed; z-index: 90; right: 16px; bottom: max(16px, env(safe-area-inset-bottom)); display: flex; width: min(460px, calc(100vw - 32px)); align-items: center; gap: 12px; border: 1px solid #dce8e0; border-radius: 16px; background: #fff; padding: 14px 48px 14px 16px; box-shadow: 0 12px 36px rgb(21 43 37 / 18%); }
+.pwa-install-copy { display: grid; flex: 1; gap: 4px; color: #152b25; font-size: 13px; line-height: 1.4; }
+.pwa-install-copy span { color: #60736c; font-size: 12px; }
+.pwa-install-action { min-height: 40px; flex: none; border: 0; border-radius: 10px; background: #0c765c; padding: 0 14px; color: #fff; font-size: 13px; font-weight: 700; }
+.pwa-install-action:hover { background: #075b47; }
+.pwa-install-action:focus-visible,.pwa-install-close:focus-visible { outline: 2px solid #0c765c; outline-offset: 2px; }
+.pwa-install-close { position: absolute; top: 7px; right: 8px; display: grid; width: 30px; height: 30px; place-items: center; border: 0; border-radius: 8px; background: transparent; color: #60736c; font-size: 22px; }
+.pwa-install-close:hover { background: #edf5f1; }
 .admin-password-wrap { position: relative; display: block; }
 .admin-password-wrap input { padding-right: 38px !important; }
 .admin-password-wrap .password-visibility-toggle { right: 5px; width: 28px; height: 28px; }

@@ -42,6 +42,52 @@ function Racine() {
   return connecte ? <Navigate to="/tableau-de-bord" replace/> : <AccueilPublique/>;
 }
 
+function InvitationInstallation() {
+  const [invite, setInvite] = useState(null);
+  const [instructionsIOS, setInstructionsIOS] = useState(false);
+  const [masquee, setMasquee] = useState(false);
+  const estIOS = /iphone|ipad|ipod/i.test(navigator.userAgent)
+    && !window.matchMedia?.("(display-mode: standalone)").matches
+    && !navigator.standalone;
+
+  useEffect(() => {
+    const proposer = (event) => {
+      event.preventDefault();
+      setInvite(event);
+    };
+    const installee = () => { setInvite(null); setInstructionsIOS(false); };
+    window.addEventListener("beforeinstallprompt", proposer);
+    window.addEventListener("appinstalled", installee);
+    return () => {
+      window.removeEventListener("beforeinstallprompt", proposer);
+      window.removeEventListener("appinstalled", installee);
+    };
+  }, []);
+
+  if (masquee || (!invite && !estIOS)) return null;
+
+  async function installer() {
+    if (invite) {
+      await invite.prompt();
+      await invite.userChoice;
+      setInvite(null);
+    } else {
+      setInstructionsIOS((visible) => !visible);
+    }
+  }
+
+  return <aside className="pwa-install-card" aria-label="Installer l’application">
+    <div className="pwa-install-copy">
+      <strong>Utilisez l’application plus facilement</strong>
+      {instructionsIOS && <span>Dans Safari, touchez Partager puis « Sur l’écran d’accueil ».</span>}
+    </div>
+    <button type="button" className="pwa-install-action" onClick={installer}>
+      {estIOS ? "Comment installer" : "Installer"}
+    </button>
+    <button type="button" className="pwa-install-close" aria-label="Fermer" onClick={() => setMasquee(true)}>×</button>
+  </aside>;
+}
+
 function PageIntrouvable() {
   return <PageAvecPiedDePage><main className="mx-auto min-h-screen max-w-md flex-1 space-y-4 px-5 py-16 text-center"><h1 className="text-2xl font-bold">{<TexteLocalise phrase={"Page introuvable"} />}</h1><Link to="/" className="font-semibold text-brand">{<TexteLocalise phrase={"Retour à l’accueil"} />}</Link></main></PageAvecPiedDePage>;
 }
@@ -124,5 +170,5 @@ function RoutesApplication() {
 }
 
 export default function App() {
-  return <LangueProvider><AuthProvider><ToastProvider><RoutesApplication/></ToastProvider></AuthProvider></LangueProvider>;
+  return <LangueProvider><AuthProvider><ToastProvider><RoutesApplication/><InvitationInstallation/></ToastProvider></AuthProvider></LangueProvider>;
 }
