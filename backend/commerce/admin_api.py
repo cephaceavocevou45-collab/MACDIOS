@@ -28,6 +28,7 @@ from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import OpenApiResponse, extend_schema, extend_schema_view
 from .authentication import verifier_csrf
 from .jwt_sessions import creer_jetons_session, definir_cookies_auth
+from .branding import NOM_APPLICATION
 
 from notifications.email import ErreurEnvoiEmail, envoyer_email
 
@@ -415,6 +416,6 @@ def _envoyer_invitation(utilisateur, nom):
         "<p>Ce lien expire après 15 minutes et ne peut être utilisé qu'une fois.</p></div>"
     )
     try:
-        envoyer_email(utilisateur.email, "Votre invitation au back-office Nobi", contenu)
+        envoyer_email(utilisateur.email, f"Votre invitation au back-office {NOM_APPLICATION}", contenu)
     except (ErreurEnvoiEmail, ValueError):
         logger.warning("Échec de l'envoi d'une invitation au back-office.")

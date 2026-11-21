@@ -4,6 +4,7 @@ import { useAdminAuth } from "../AdminAuthContext";
 import { erreurAdmin } from "../adminApi";
 import { SelecteurLangue, TexteLocalise, traduire } from "../../contexte/LangueContext";
 import Icon from "../../composants/Icon";
+import { branding } from "../../config/branding";
 
 export default function AdminConnexion() {
   const { connexion, connecte } = useAdminAuth();
@@ -40,8 +41,8 @@ export default function AdminConnexion() {
       <section className="admin-login-card">
         <div className="admin-login-locale"><SelecteurLangue compact /></div>
         <div className="admin-brand admin-brand-login">
-          <span className="admin-brand-mark"><TexteLocalise phrase="N" /></span>
-          <span><TexteLocalise phrase="Nobi" /><small><TexteLocalise phrase="BACK-OFFICE" /></small></span>
+          <span className="admin-brand-mark">{branding.logoMark}</span>
+          <span>{branding.appName}<small><TexteLocalise phrase="BACK-OFFICE" /></small></span>
         </div>
         <div className="admin-login-kicker"><TexteLocalise phrase="ESPACE DE GESTION" /></div>
         <h1><TexteLocalise phrase="Connexion administrateur" /></h1>

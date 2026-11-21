@@ -1,5 +1,7 @@
 
-import { localePourLangue, TexteLocalise, traduire } from "../contexte/LangueContext";export function AdminTitre({ surtitre = "NOBI · ADMINISTRATION", titre, description, action }) {
+import { localePourLangue, TexteLocalise, traduire } from "../contexte/LangueContext";
+import { branding } from "../config/branding";
+export function AdminTitre({ surtitre = `${branding.appName} · ADMINISTRATION`, titre, description, action }) {
   return <header className="admin-page-head"><div><div className="admin-eyebrow">{traduire(surtitre)}</div><h1>{traduire(titre)}</h1>{description && <p>{traduire(description)}</p>}</div>{action && <div className="admin-head-action">{action}</div>}</header>;
 }
 

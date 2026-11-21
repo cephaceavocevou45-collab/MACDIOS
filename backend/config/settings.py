@@ -9,6 +9,7 @@ from decouple import Csv, config
 import dj_database_url
 from corsheaders.defaults import default_headers
 from django.core.exceptions import ImproperlyConfigured
+from commerce.branding import NOM_APPLICATION
 
 from .observabilite import filtrer_evenement_sentry
 
@@ -256,13 +257,13 @@ CSRF_COOKIE_SAMESITE = AUTH_COOKIE_SAMESITE
 SMS_SIMULATION = config("SMS_SIMULATION", default=True, cast=bool)
 VONAGE_API_KEY = config("VONAGE_API_KEY", default="")
 VONAGE_API_SECRET = config("VONAGE_API_SECRET", default="")
-VONAGE_SMS_SENDER = config("VONAGE_SMS_SENDER", default="Nobi")
+VONAGE_SMS_SENDER = config("VONAGE_SMS_SENDER", default=NOM_APPLICATION) or NOM_APPLICATION
 
 # Brevo Transactional Email : simulation activée par défaut en local.
 EMAIL_SIMULATION = config("EMAIL_SIMULATION", default=True, cast=bool)
 BREVO_API_KEY = config("BREVO_API_KEY", default="")
 BREVO_SENDER_EMAIL = config("BREVO_SENDER_EMAIL", default="")
-BREVO_SENDER_NAME = config("BREVO_SENDER_NAME", default="Nobi")
+BREVO_SENDER_NAME = config("BREVO_SENDER_NAME", default=NOM_APPLICATION) or NOM_APPLICATION
 
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": ["commerce.authentication.CookieSessionJWTAuthentication"],
@@ -281,7 +282,7 @@ REST_FRAMEWORK = {
     "NUM_PROXIES": 1 if EST_PRODUCTION else None,
 }
 SPECTACULAR_SETTINGS = {
-    "TITLE": "Nobi — API de gestion commerciale",
+    "TITLE": f"{NOM_APPLICATION} — API de gestion commerciale",
     "DESCRIPTION": "API REST pour gérer les ventes, le stock, les clients et les abonnements.",
     "VERSION": "1.0.0",
     "SERVE_INCLUDE_SCHEMA": False,

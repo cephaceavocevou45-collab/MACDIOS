@@ -1,10 +1,11 @@
 // Modifiez cette configuration pour adapter le nom, les coordonnées et les liens publics.
-const whatsappNobi = "https://wa.me/2290157179683";
+const whatsappContact = "https://wa.me/2290157179683";
 
 export const branding = {
-  appName: "Nobi",
+  appName: "MACDIOS",
+  appShortName: "MACD",
   appDescription: "La gestion simple de votre commerce, depuis votre téléphone.",
-  logoMark: "n",
+  logoMark: "M",
   // Palette utilisée uniquement par la page publique.
   palette: {
     primary: "#17324D",
@@ -19,7 +20,7 @@ export const branding = {
   contact: {
     email: "cephacemacevo@gmail.com",
     telephone: "+2290157179683",
-    whatsapp: whatsappNobi,
+    whatsapp: whatsappContact,
     address: "Cotonou, Bénin",
     facebook: "",
   },
@@ -27,7 +28,7 @@ export const branding = {
   socials: {
     facebook: "",
     instagram: "",
-    whatsapp: whatsappNobi,
+    whatsapp: whatsappContact,
     linkedin: "",
     tiktok: "",
     youtube: "",

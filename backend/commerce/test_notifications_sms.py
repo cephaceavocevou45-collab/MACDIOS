@@ -22,7 +22,7 @@ class ServiceSmsTests(TestCase):
         self.numero = "+22961020304"
         self.message = "Votre boutique : essai terminé le 01/10/2026."
 
-    @override_settings(SMS_SIMULATION=False, VONAGE_API_KEY="cle-test", VONAGE_API_SECRET="secret-test", VONAGE_SMS_SENDER="Nobi")
+    @override_settings(SMS_SIMULATION=False, VONAGE_API_KEY="cle-test", VONAGE_API_SECRET="secret-test", VONAGE_SMS_SENDER="MACDTEST")
     @patch("notifications.sms.urlopen")
     def test_envoi_reussi_interprete_la_reponse_vonage(self, ouvrir):
         reponse = MagicMock()
@@ -38,7 +38,7 @@ class ServiceSmsTests(TestCase):
         self.assertIn(b"to=22961020304", requete.data)
         ouvrir.assert_called_once()
 
-    @override_settings(SMS_SIMULATION=False, VONAGE_API_KEY="cle-test", VONAGE_API_SECRET="secret-test", VONAGE_SMS_SENDER="Nobi")
+    @override_settings(SMS_SIMULATION=False, VONAGE_API_KEY="cle-test", VONAGE_API_SECRET="secret-test", VONAGE_SMS_SENDER="MACDTEST")
     @patch("notifications.sms.urlopen")
     def test_echec_fournisseur_est_converti_en_erreur_sans_detail_sensible(self, ouvrir):
         reponse = MagicMock()
@@ -50,7 +50,7 @@ class ServiceSmsTests(TestCase):
         with self.assertRaisesRegex(ErreurEnvoiSms, "n'a pas accepté"):
             envoyer_sms(self.numero, self.message)
 
-    @override_settings(SMS_SIMULATION=False, VONAGE_API_KEY="cle-test", VONAGE_API_SECRET="secret-test", VONAGE_SMS_SENDER="Nobi")
+    @override_settings(SMS_SIMULATION=False, VONAGE_API_KEY="cle-test", VONAGE_API_SECRET="secret-test", VONAGE_SMS_SENDER="MACDTEST")
     @patch("notifications.sms.urlopen")
     def test_numero_invalide_est_refuse_avant_appel_fournisseur(self, ouvrir):
         with self.assertRaisesRegex(ValueError, r"\+229 suivi de 8 chiffres"):
@@ -64,7 +64,7 @@ class ServiceSmsTests(TestCase):
             envoyer_sms(self.numero, self.message)
         ouvrir.assert_not_called()
 
-    @override_settings(SMS_SIMULATION=False, VONAGE_API_KEY="cle-test", VONAGE_API_SECRET="secret-test", VONAGE_SMS_SENDER="Nobi")
+    @override_settings(SMS_SIMULATION=False, VONAGE_API_KEY="cle-test", VONAGE_API_SECRET="secret-test", VONAGE_SMS_SENDER="MACDTEST")
     @patch("notifications.sms.urlopen", side_effect=URLError("détail privé du fournisseur"))
     def test_erreur_reseau_est_convertie_en_erreur_generique(self, ouvrir):
         with self.assertRaisesRegex(ErreurEnvoiSms, "n'a pas accepté") as erreur:

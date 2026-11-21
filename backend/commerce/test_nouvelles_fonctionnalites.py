@@ -8,6 +8,7 @@ from urllib.parse import parse_qs, urlparse
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
+from commerce.branding import NOM_APPLICATION
 from django.core.cache import cache
 from django.utils import timezone
 from pypdf import PdfReader
@@ -186,7 +187,7 @@ class NouvellesFonctionnalitesTests(TestCase):
         self.assertIn("13 000 FCFA", texte)
         self.assertIn(timezone.localtime(dette.date).strftime("%d/%m/%Y"), texte)
         self.assertIn("12 500 FCFA", texte)
-        self.assertIn("Document certifié Nobi", texte)
+        self.assertIn(f"Document certifié {NOM_APPLICATION}", texte)
         dette.refresh_from_db()
         self.assertIsNotNone(dette.code_verification)
         self.assertIsNotNone(dette.date_generation)

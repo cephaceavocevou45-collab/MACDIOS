@@ -1,6 +1,6 @@
-<p><strong>English</strong>: Nobi is a mobile-first shop management MVP for small retailers. Track sales, stock, customers and customer debts with a Django REST API and a lightweight React application.</p>
+<p><strong>English</strong>: MACDIOS is a mobile-first shop management MVP for small retailers. Track sales, stock, customers and customer debts with a Django REST API and a lightweight React application.</p>
 
-# Nobi — Gestion simple de commerce
+# MACDIOS — Gestion simple de commerce
 
 > Gérer ventes, stock et dettes depuis un téléphone, avec une interface conçue pour les petits commerçants francophones.
 
@@ -12,9 +12,9 @@
 
 ## Problème et solution
 
-Les petits commerçants suivent souvent ventes, quantités et crédits clients de mémoire ou dans des cahiers. Nobi rassemble ces opérations dans une application lisible sur téléphone : le commerçant saisit les ventes et les mouvements de dettes, puis consulte ses stocks et récapitulatifs.
+Les petits commerçants suivent souvent ventes, quantités et crédits clients de mémoire ou dans des cahiers. MACDIOS rassemble ces opérations dans une application lisible sur téléphone : le commerçant saisit les ventes et les mouvements de dettes, puis consulte ses stocks et récapitulatifs.
 
-Nobi est un MVP en construction. Toute donnée de démonstration créée par `seed_demo` est synthétique ; aucun chiffre d'utilisation ou résultat commercial n'est revendiqué.
+MACDIOS est un MVP en construction. Toute donnée de démonstration créée par `seed_demo` est synthétique ; aucun chiffre d'utilisation ou résultat commercial n'est revendiqué.
 
 ## Fonctionnalités
 

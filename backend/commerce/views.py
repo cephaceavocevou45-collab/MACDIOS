@@ -40,6 +40,7 @@ from .api_docs import (
     SanteReponseSerializer, SessionReponseSerializer,
 )
 from .audit import enregistrer_evenement, suspendre_audit
+from .branding import NOM_APPLICATION
 from .idempotence import CreationIdempotenteMixin
 from .models import Abonnement, Approvisionnement, Client, ConfigurationEssai, CorrectionDette, DemandePaiementManuel, Dette, Fournisseur, JournalAudit, LigneApprovisionnement, MouvementStock, Paiement, PaiementAbonnementHistorique, Plan, Produit, Vente
 from .pagination import PaginationAudit, PaginationStandard
@@ -166,12 +167,12 @@ def inscription(request):
     )
     contenu_bienvenue = format_html(
         '<div style="font-family:Arial,sans-serif;color:#243b36;line-height:1.6">'
-        '<h1 style="color:#0c765c">Bienvenue sur Nobi</h1><p>Bonjour {},</p>'
+        '<h1 style="color:#0c765c">Bienvenue sur {}</h1><p>Bonjour {},</p>'
         '<p>{}</p><p>Bonne gestion de votre boutique !</p></div>',
-        user.nom_boutique, message_essai,
+        NOM_APPLICATION, user.nom_boutique, message_essai,
     )
     try:
-        envoyer_email(user.email, "Bienvenue sur Nobi", str(contenu_bienvenue))
+        envoyer_email(user.email, f"Bienvenue sur {NOM_APPLICATION}", str(contenu_bienvenue))
     except (ErreurEnvoiEmail, ValueError):
         # La création du compte ne dépend pas de la disponibilité du fournisseur.
         logger.warning("Échec de l'envoi de l'email de bienvenue.")

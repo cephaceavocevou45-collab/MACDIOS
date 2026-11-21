@@ -26,7 +26,7 @@ class ServiceEmailTests(TestCase):
         EMAIL_SIMULATION=False,
         BREVO_API_KEY="cle-test-brevo",
         BREVO_SENDER_EMAIL="noreply@example.test",
-        BREVO_SENDER_NAME="Nobi test",
+        BREVO_SENDER_NAME="Application de test",
     )
     @patch("notifications.email.urlopen")
     def test_envoi_reussi_utilise_l_api_transactionnelle_brevo(self, ouvrir):
@@ -49,7 +49,7 @@ class ServiceEmailTests(TestCase):
         EMAIL_SIMULATION=False,
         BREVO_API_KEY="cle-test-brevo",
         BREVO_SENDER_EMAIL="noreply@example.test",
-        BREVO_SENDER_NAME="Nobi test",
+        BREVO_SENDER_NAME="Application de test",
     )
     @patch("notifications.email.urlopen", side_effect=URLError("détail fournisseur privé"))
     def test_echec_fournisseur_est_converti_en_erreur_generique(self, ouvrir):

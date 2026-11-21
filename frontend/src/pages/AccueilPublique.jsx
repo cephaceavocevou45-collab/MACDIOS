@@ -27,7 +27,7 @@ const fonctionnalites = [
 ];
 
 const questions = [
-  ["À qui s’adresse Nobi ?", "Nobi est conçu pour les petits commerces qui veulent suivre simplement leurs ventes, leur stock et les crédits accordés aux clients."],
+  ["À qui s’adresse l’application ?", "Cette application est conçue pour les petits commerces qui veulent suivre simplement leurs ventes, leur stock et les crédits accordés aux clients."],
   ["Ai-je besoin d’un ordinateur ?", "Non. L’interface fonctionne sur téléphone Android et s’adapte aussi aux écrans d’ordinateur."],
   ["Comment le stock est-il mis à jour ?", "À chaque vente enregistrée, la quantité vendue est automatiquement retirée du stock."],
   ["Puis-je suivre les paiements de mes clients ?", "Oui. Vous pouvez enregistrer un paiement et retrouver le solde calculé à partir des dettes et paiements du client."],
@@ -39,7 +39,7 @@ function Marque({ clair = false }) {
 
 function ApercuApplication() {
   return (
-    <div className="hero-visual" aria-label={traduire("Aperçu illustratif du tableau de bord Nobi")}>
+    <div className="hero-visual" aria-label={traduire("Aperçu illustratif du tableau de bord")}>
       <div className="app-preview">
         <div className="preview-top"><span className="preview-brand"><span className="brand-mark">{branding.logoMark}</span>{branding.appName}</span><span className="preview-user" /></div>
         <div className="preview-content">

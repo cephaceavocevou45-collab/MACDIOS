@@ -8,10 +8,11 @@ from django.conf import settings
 from django.core import serializers
 from django.core.management import BaseCommand, CommandError
 from django.db import transaction
+from commerce.branding import NOM_APPLICATION
 
 
 class Command(BaseCommand):
-    help = "Déchiffre et restaure une sauvegarde Nobi dans la base configurée."
+    help = f"Déchiffre et restaure une sauvegarde {NOM_APPLICATION} dans la base configurée."
 
     def add_arguments(self, parser):
         parser.add_argument("source", type=Path, help="Fichier chiffré .json.gz.fernet.")

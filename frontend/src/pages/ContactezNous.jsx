@@ -31,7 +31,7 @@ export default function ContactezNous() {
     const objet = String(formulaire.get("objet") || "").trim() || "Demande d’information";
     const message = String(formulaire.get("message") || "").trim();
     const contenu = `Nom : ${nom}\nAdresse email : ${email}\n\n${message}`;
-    const requete = new URLSearchParams({ subject: `Nobi — ${objet}`, body: contenu });
+    const requete = new URLSearchParams({ subject: `${branding.appName} — ${objet}`, body: contenu });
 
     // Aucun endpoint de contact n’existe encore : le message est préparé dans l’application email du visiteur.
     window.location.href = `mailto:${adresseEmail}?${requete.toString()}`;
@@ -43,7 +43,7 @@ export default function ContactezNous() {
         <RetourPage />
         <span className="contact-eyebrow">{<TexteLocalise phrase={"Support"} />}</span>
         <h1>{<TexteLocalise phrase={"Contactez-nous"} />}</h1>
-        <p>{<TexteLocalise phrase={"Une question sur Nobi, ou simplement besoin d’aide ? Écrivez-nous, nous vous répondrons dès que possible."} />}</p>
+        <p>{<TexteLocalise phrase={"Une question ? Écrivez-nous, nous vous répondrons."} />}</p>
       </header>
 
       <div className="contact-layout">

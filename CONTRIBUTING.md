@@ -1,6 +1,6 @@
 # Contribuer
 
-Merci de contribuer à Nobi. Les changements doivent préserver l'isolation des données de chaque commerçant et l'interface française mobile-first.
+Merci de contribuer à MACDIOS. Les changements doivent préserver l'isolation des données de chaque commerçant et l'interface française mobile-first.
 
 1. Créez une branche dédiée et décrivez brièvement le changement.
 2. Installez `backend/requirements-dev.txt` et les dépendances frontend avec `npm ci`.

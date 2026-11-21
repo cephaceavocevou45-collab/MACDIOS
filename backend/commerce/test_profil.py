@@ -80,10 +80,10 @@ class ProfilUtilisateurTests(TestCase):
             nom_boutique="Administration",
         )
         self.api.force_authenticate(super_admin)
-        reponse = self.api.patch("/api/profil/", {"nom_affiche": "Nobi Administration"}, format="json")
+        reponse = self.api.patch("/api/profil/", {"nom_affiche": "Boutique de test"}, format="json")
         self.assertEqual(reponse.status_code, 200, reponse.data)
         super_admin.refresh_from_db()
-        self.assertEqual(super_admin.nom_boutique, "Nobi Administration")
+        self.assertEqual(super_admin.nom_boutique, "Boutique de test")
 
     def test_telephone_de_contact_accepte_les_pays_et_normalise_l_ancien_format_beninois(self):
         invalide = self.api.patch("/api/profil/", {"telephone": "+2290102"}, format="json")

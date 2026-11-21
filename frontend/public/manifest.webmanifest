@@ -1,7 +1,7 @@
 {
   "id": "/",
-  "name": "Application de gestion commerciale",
-  "short_name": "Gestion",
+  "name": "__APP_NAME__",
+  "short_name": "__APP_SHORT_NAME__",
   "description": "Gérez vos ventes, vos produits et vos clients depuis votre téléphone.",
   "lang": "fr",
   "start_url": "/",

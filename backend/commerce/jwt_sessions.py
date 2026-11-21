@@ -1,4 +1,4 @@
-"""Création, rotation et révocation des sessions JWT de Nobi."""
+"""Création, rotation et révocation des sessions JWT de l’application."""
 
 from datetime import datetime, timezone as datetime_timezone
 import uuid
