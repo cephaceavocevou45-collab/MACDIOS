@@ -106,7 +106,7 @@ class NouvellesFonctionnalitesTests(TestCase):
         self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
         commercant = Commercant.objects.get(pk=response.data["id"])
         self.assertIsNone(commercant.email)
-        self.assertEqual(commercant.telephone, "+22962030407")
+        self.assertEqual(commercant.telephone, "+2290162030407")
         envoi_email.assert_not_called()
 
     def test_email_invalide_est_refuse_a_l_inscription(self):
