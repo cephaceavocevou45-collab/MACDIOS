@@ -30,6 +30,7 @@ export default function TelephoneInternational({
   hint = "Choisissez votre pays puis saisissez votre numéro.",
   invalid = false,
   langue = "fr",
+  required = false,
 }) {
   const [pays, setPays] = useState("BJ");
   const [national, setNational] = useState("");
@@ -186,6 +187,7 @@ export default function TelephoneInternational({
             onChange={changerNumero}
             placeholder={traduire("Numéro sans l’indicatif")}
             aria-invalid={invalid}
+            required={required}
           />
         </span>
       </label>

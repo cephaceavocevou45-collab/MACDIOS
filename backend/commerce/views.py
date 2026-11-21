@@ -66,6 +66,8 @@ from .serializers import (
     ProfilSerializer,
 )
 from notifications.email import ErreurEnvoiEmail, envoyer_email
+from notifications.sms import ErreurEnvoiSms, envoyer_sms
+from .validators import normaliser_telephone_international
 
 Commercant = get_user_model()
 logger = logging.getLogger(__name__)
@@ -149,7 +151,7 @@ def _reponse_liste_paginee(request, queryset, serializer_class):
 @extend_schema(
     tags=["Auth"], summary="Inscrire un commerçant", request=InscriptionSerializer,
     responses={201: InscriptionReponseSerializer, 400: EXEMPLE_ERREUR, 429: EXEMPLE_NON_AUTORISE},
-    examples=[OpenApiExample("Inscription", value={"email": "commercant@example.com", "telephone": "+22961020304", "nom_boutique": "Ma boutique", "mot_de_passe": "MotDePasse123!", "accepte_conditions": True}, request_only=True)],
+    examples=[OpenApiExample("Inscription", value={"telephone": "+22961020304", "nom_boutique": "Ma boutique", "mot_de_passe": "MotDePasse123!", "confirmation_mot_de_passe": "MotDePasse123!", "accepte_conditions": True}, request_only=True)],
 )
 @api_view(["POST"])
 @authentication_classes([])
@@ -171,11 +173,12 @@ def inscription(request):
         '<p>{}</p><p>Bonne gestion de votre boutique !</p></div>',
         NOM_APPLICATION, user.nom_boutique, message_essai,
     )
-    try:
-        envoyer_email(user.email, f"Bienvenue sur {NOM_APPLICATION}", str(contenu_bienvenue))
-    except (ErreurEnvoiEmail, ValueError):
-        # La création du compte ne dépend pas de la disponibilité du fournisseur.
-        logger.warning("Échec de l'envoi de l'email de bienvenue.")
+    if user.email:
+        try:
+            envoyer_email(user.email, f"Bienvenue sur {NOM_APPLICATION}", str(contenu_bienvenue))
+        except (ErreurEnvoiEmail, ValueError):
+            # La création du compte ne dépend pas de la disponibilité du fournisseur.
+            logger.warning("Échec de l'envoi de l'email de bienvenue.")
     return Response(
         {"id": str(user.id), "email": user.email, "telephone": user.telephone, "nom_boutique": user.nom_boutique},
         status=status.HTTP_201_CREATED,
@@ -185,7 +188,7 @@ def inscription(request):
 @extend_schema(
     tags=["Auth"], summary="Ouvrir une session commerçant", request=ConnexionSerializer,
     responses={200: ConnexionReponseSerializer, 400: EXEMPLE_ERREUR, 429: EXEMPLE_NON_AUTORISE},
-    examples=[OpenApiExample("Connexion", value={"email": "commercant@example.com", "mot_de_passe": "MotDePasse123!"}, request_only=True)],
+    examples=[OpenApiExample("Connexion", value={"telephone": "+22961020304", "mot_de_passe": "MotDePasse123!"}, request_only=True)],
 )
 @api_view(["POST"])
 @authentication_classes([])
@@ -199,7 +202,16 @@ def connexion(request):
         serializer.is_valid(raise_exception=True)
     except APIException:
         email = str(request.data.get("email", ""))[:254].strip().lower()
-        commercant_tente = Commercant.objects.filter(email=email).first() if email else None
+        telephone = str(request.data.get("telephone", ""))[:20].strip()
+        if telephone:
+            try:
+                telephone = normaliser_telephone_international(telephone)
+            except DjangoValidationError:
+                telephone = ""
+        correspondances = Commercant.objects.filter(telephone=telephone) if telephone else Commercant.objects.none()
+        commercant_tente = correspondances.first() if correspondances.count() == 1 else (
+            Commercant.objects.filter(email=email).first() if email else None
+        )
         if (
             commercant_tente and not commercant_tente.is_staff
             and not commercant_tente.is_active and commercant_tente.motif_suspension
@@ -332,7 +344,7 @@ def deconnexion(request):
 
 
 @extend_schema(
-    tags=["Auth"], summary="Demander un lien temporaire de réinitialisation par email",
+    tags=["Auth"], summary="Demander un lien temporaire par SMS ou email historique",
     request=DemandeReinitialisationSerializer,
     responses={200: OpenApiTypes.OBJECT, 400: EXEMPLE_ERREUR, 429: EXEMPLE_NON_AUTORISE},
 )
@@ -341,12 +353,16 @@ def deconnexion(request):
 @permission_classes([AllowAny])
 @throttle_scope("mot_de_passe_oublie")
 def mot_de_passe_oublie(request):
-    """Répond de façon identique, que l'adresse email corresponde ou non."""
+    """Répond de façon identique, que le numéro ou email historique existe ou non."""
     serializer = DemandeReinitialisationSerializer(data=request.data)
     serializer.is_valid(raise_exception=True)
-    utilisateur = Commercant.objects.filter(
-        email=serializer.validated_data["email"], is_active=True,
-    ).first()
+    telephone = serializer.validated_data.get("telephone")
+    email = serializer.validated_data.get("email")
+    if telephone:
+        correspondances = Commercant.objects.filter(telephone=telephone, is_active=True)
+        utilisateur = correspondances.first() if correspondances.count() == 1 else None
+    else:
+        utilisateur = Commercant.objects.filter(email=email, is_active=True).first()
     if utilisateur is not None:
         uid = urlsafe_base64_encode(force_bytes(utilisateur.pk))
         jeton = default_token_generator.make_token(utilisateur)
@@ -362,18 +378,26 @@ def mot_de_passe_oublie(request):
             utilisateur.nom_boutique,
             lien,
         )
-        try:
-            envoyer_email(utilisateur.email, "Réinitialisation de votre mot de passe", str(contenu))
-        except (ErreurEnvoiEmail, ValueError):
-            # La réponse reste identique afin de ne pas révéler si le compte existe.
-            logger.warning("Échec de l'envoi de l'email de réinitialisation.")
-    if settings.EMAIL_SIMULATION:
+        if email:
+            try:
+                envoyer_email(utilisateur.email, "Réinitialisation de votre mot de passe", str(contenu))
+            except (ErreurEnvoiEmail, ValueError):
+                # La réponse reste identique afin de ne pas révéler si le compte existe.
+                logger.warning("Échec de l'envoi de l'email de réinitialisation.")
+        if telephone:
+            try:
+                envoyer_sms(telephone, f"{NOM_APPLICATION} : pour changer votre mot de passe, ouvrez ce lien (valable 15 min) : {lien}")
+            except (ErreurEnvoiSms, ValueError):
+                logger.warning("Échec de l'envoi du SMS de réinitialisation.")
+    mode_simulation = settings.SMS_SIMULATION if telephone else settings.EMAIL_SIMULATION
+    if mode_simulation:
         detail = (
-            "Mode simulation actif : aucun email réel n'a été envoyé. "
-            "En mode réel, un lien sera envoyé si cette adresse correspond à un compte actif."
+            "Mode simulation actif : aucun message réel n'a été envoyé. "
+            "En mode réel, un lien sera envoyé si ces coordonnées correspondent à un compte actif."
         )
     else:
-        detail = "Si cette adresse correspond à un compte actif, un lien de réinitialisation sera envoyé par email."
+        canal = "SMS" if telephone else "email"
+        detail = f"Si ces coordonnées correspondent à un compte actif, un lien de réinitialisation sera envoyé par {canal}."
     return Response({"detail": detail}, status=status.HTTP_200_OK)
 
 

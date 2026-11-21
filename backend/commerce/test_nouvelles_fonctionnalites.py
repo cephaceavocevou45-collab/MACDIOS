@@ -46,21 +46,21 @@ class NouvellesFonctionnalitesTests(TestCase):
         for index, telephone in enumerate(formats_invalides):
             with self.subTest(telephone=telephone):
                 reponse = APIClient().post("/api/auth/inscription/", {
-                    "email": f"telephone-{index}@example.test", "telephone": telephone, "nom_boutique": "Test téléphone",
-                    "mot_de_passe": "MotDePasse123!", "accepte_conditions": True,
+                    "telephone": telephone, "nom_boutique": "Test téléphone",
+                    "mot_de_passe": "MotDePasse123!", "confirmation_mot_de_passe": "MotDePasse123!", "accepte_conditions": True,
                 }, format="json")
                 self.assertEqual(reponse.status_code, status.HTTP_400_BAD_REQUEST)
                 self.assertIn("numéro", str(reponse.data).lower())
         telephone_valide = "+2290161020305"
         acceptee = APIClient().post("/api/auth/inscription/", {
-            "email": "telephone-valide@example.test", "telephone": telephone_valide, "nom_boutique": "Boutique valide",
-            "mot_de_passe": "MotDePasse123!", "accepte_conditions": True,
+            "telephone": telephone_valide, "nom_boutique": "Boutique valide",
+            "mot_de_passe": "MotDePasse123!", "confirmation_mot_de_passe": "MotDePasse123!", "accepte_conditions": True,
         }, format="json")
         self.assertEqual(acceptee.status_code, status.HTTP_201_CREATED, acceptee.data)
         self.assertTrue(Commercant.objects.filter(telephone=telephone_valide).exists())
         telephone_etranger = APIClient().post("/api/auth/inscription/", {
-            "email": "telephone-us@example.test", "telephone": "+12025550123", "nom_boutique": "Boutique étrangère",
-            "mot_de_passe": "MotDePasse123!", "accepte_conditions": True,
+            "telephone": "+12025550123", "nom_boutique": "Boutique étrangère",
+            "mot_de_passe": "MotDePasse123!", "confirmation_mot_de_passe": "MotDePasse123!", "accepte_conditions": True,
         }, format="json")
         self.assertEqual(telephone_etranger.status_code, status.HTTP_201_CREATED, telephone_etranger.data)
 
@@ -97,17 +97,17 @@ class NouvellesFonctionnalitesTests(TestCase):
         self.assertEqual(existant.data, inconnu.data)
         self.assertEqual(envoi_email.call_count, 1)
 
-    def test_inscription_accepte_email_sans_telephone_et_envoie_accueil(self):
+    def test_inscription_exige_un_telephone_et_ne_demande_pas_email(self):
         with patch("commerce.views.envoyer_email") as envoi_email:
             response = APIClient().post("/api/auth/inscription/", {
-                "email": "bienvenue@example.test", "telephone": "", "nom_boutique": "Boutique sans téléphone",
-                "mot_de_passe": "MotDePasseLong2026!", "accepte_conditions": True,
+                "telephone": "+22962030407", "nom_boutique": "Boutique sans email",
+                "mot_de_passe": "MotDePasseLong2026!", "confirmation_mot_de_passe": "MotDePasseLong2026!", "accepte_conditions": True,
             }, format="json")
         self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
         commercant = Commercant.objects.get(pk=response.data["id"])
-        self.assertEqual(commercant.email, "bienvenue@example.test")
-        self.assertEqual(commercant.telephone, "")
-        self.assertIn("14 jours", envoi_email.call_args.args[2])
+        self.assertIsNone(commercant.email)
+        self.assertEqual(commercant.telephone, "+22962030407")
+        envoi_email.assert_not_called()
 
     def test_email_invalide_est_refuse_a_l_inscription(self):
         response = APIClient().post("/api/auth/inscription/", {

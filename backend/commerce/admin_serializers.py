@@ -100,7 +100,7 @@ class UtilisateurBackOfficeSerializer(serializers.ModelSerializer):
 
 
 class DemandePaiementAdminSerializer(serializers.ModelSerializer):
-    commercant_email = serializers.EmailField(source="commercant.email", read_only=True)
+    commercant_email = serializers.EmailField(source="commercant.email", read_only=True, allow_null=True)
     nom_boutique = serializers.CharField(source="commercant.nom_boutique", read_only=True)
     plan_nom = serializers.CharField(source="plan.nom", read_only=True)
     operateur_nom = serializers.CharField(source="get_operateur_display", read_only=True)

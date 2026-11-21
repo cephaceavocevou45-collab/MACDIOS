@@ -47,7 +47,7 @@ class ProfilSerializer(serializers.Serializer):
     """Profil de l'utilisateur authentifié, quel que soit son rôle."""
 
     nom_affiche = NomAfficheField(max_length=120, required=False, trim_whitespace=True)
-    email = serializers.EmailField(read_only=True)
+    email = serializers.EmailField(read_only=True, allow_null=True)
     telephone = serializers.CharField(max_length=20, required=False, allow_blank=True)
     adresse = serializers.CharField(max_length=200, required=False, allow_blank=True, trim_whitespace=True)
     ville = serializers.CharField(max_length=120, required=False, allow_blank=True, trim_whitespace=True)
@@ -74,11 +74,19 @@ class ProfilSerializer(serializers.Serializer):
 
     def validate_telephone(self, valeur):
         if not valeur:
+            if self.instance and not self.instance.email:
+                raise serializers.ValidationError("Un numéro de téléphone est nécessaire pour vous connecter.")
             return ""
         try:
-            return normaliser_telephone_international(valeur)
+            numero = normaliser_telephone_international(valeur)
         except DjangoValidationError as erreur:
             raise serializers.ValidationError(erreur.messages) from erreur
+        doublons = Commercant.objects.filter(telephone=numero)
+        if self.instance:
+            doublons = doublons.exclude(pk=self.instance.pk)
+        if doublons.exists():
+            raise serializers.ValidationError("Ce numéro est déjà associé à un autre compte.")
+        return numero
 
     def update(self, utilisateur, donnees):
         logo_precedent = utilisateur.logo_profil.name if utilisateur.logo_profil else ""
@@ -119,28 +127,36 @@ class ProfilSerializer(serializers.Serializer):
 
 
 class InscriptionSerializer(serializers.ModelSerializer):
-    email = serializers.EmailField()
-    mot_de_passe = serializers.CharField(write_only=True, validators=[validate_password])
+    telephone = serializers.CharField(max_length=20, required=True, allow_blank=False)
+    mot_de_passe = serializers.CharField(write_only=True, max_length=128)
+    confirmation_mot_de_passe = serializers.CharField(write_only=True, max_length=128)
     accepte_conditions = serializers.BooleanField(write_only=True, required=True)
 
     class Meta:
         model = Commercant
-        fields = ["id", "email", "telephone", "nom_boutique", "mot_de_passe", "accepte_conditions", "consentement_le"]
+        fields = ["id", "telephone", "nom_boutique", "mot_de_passe", "confirmation_mot_de_passe", "accepte_conditions", "consentement_le"]
     read_only_fields = ["id", "consentement_le"]
 
-    def validate_email(self, valeur):
-        valeur = valeur.strip().lower()
-        if Commercant.objects.filter(email__iexact=valeur).exists():
-            raise serializers.ValidationError("Cette adresse email est déjà associée à un compte.")
-        return valeur
-
     def validate_telephone(self, valeur):
-        if not valeur:
-            return ""
         try:
-            return normaliser_telephone_international(valeur)
+            numero = normaliser_telephone_international(valeur)
         except DjangoValidationError as erreur:
             raise serializers.ValidationError(erreur.messages) from erreur
+        if Commercant.objects.filter(telephone=numero).exists():
+            raise serializers.ValidationError("Ce numéro est déjà associé à un compte.")
+        return numero
+
+    def validate(self, attrs):
+        if attrs["mot_de_passe"] != attrs["confirmation_mot_de_passe"]:
+            raise serializers.ValidationError({"confirmation_mot_de_passe": "Les mots de passe ne correspondent pas."})
+        utilisateur = Commercant(
+            telephone=attrs["telephone"], nom_boutique=attrs["nom_boutique"],
+        )
+        try:
+            validate_password(attrs["mot_de_passe"], user=utilisateur)
+        except DjangoValidationError as erreur:
+            raise serializers.ValidationError({"mot_de_passe": erreur.messages}) from erreur
+        return attrs
 
     def validate_accepte_conditions(self, valeur):
         if not valeur:
@@ -149,6 +165,7 @@ class InscriptionSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         password = validated_data.pop("mot_de_passe")
+        validated_data.pop("confirmation_mot_de_passe")
         validated_data.pop("accepte_conditions")
         with transaction.atomic():
             commercant = Commercant.objects.create_user(
@@ -171,20 +188,32 @@ class InscriptionSerializer(serializers.ModelSerializer):
 
 
 class ConnexionSerializer(serializers.Serializer):
-    email = serializers.EmailField(max_length=254)
+    telephone = serializers.CharField(max_length=20, required=False, allow_blank=False)
+    email = serializers.EmailField(max_length=254, required=False)
     mot_de_passe = serializers.CharField(write_only=True)
+
+    def validate_telephone(self, valeur):
+        try:
+            return normaliser_telephone_international(valeur)
+        except DjangoValidationError as erreur:
+            raise serializers.ValidationError(erreur.messages) from erreur
 
     def validate_email(self, valeur):
         return valeur.strip().lower()
 
     def validate(self, attrs):
+        telephone = attrs.get("telephone")
+        email = attrs.get("email")
+        if bool(telephone) == bool(email):
+            raise serializers.ValidationError("Saisissez un numéro de téléphone ou l’email d’un ancien compte.")
+        identifiant = telephone or email
         user = authenticate(
             request=self.context.get("request"),
-            email=attrs["email"],
+            username=identifiant,
             password=attrs["mot_de_passe"],
         )
         if not user:
-            raise serializers.ValidationError("Email ou mot de passe incorrect.")
+            raise serializers.ValidationError("Numéro ou mot de passe incorrect.")
         if not user.is_active:
             raise serializers.ValidationError("Ce compte est désactivé.")
         attrs["user"] = user
@@ -429,16 +458,28 @@ class NouvelleCorrectionDetteSerializer(serializers.Serializer):
 
 
 class DemandeReinitialisationSerializer(serializers.Serializer):
-    email = serializers.EmailField(max_length=254)
+    telephone = serializers.CharField(max_length=20, required=False, allow_blank=False)
+    email = serializers.EmailField(max_length=254, required=False)
+
+    def validate_telephone(self, valeur):
+        try:
+            return normaliser_telephone_international(valeur)
+        except DjangoValidationError as erreur:
+            raise serializers.ValidationError(erreur.messages) from erreur
 
     def validate_email(self, valeur):
         return valeur.strip().lower()
+
+    def validate(self, attrs):
+        if bool(attrs.get("telephone")) == bool(attrs.get("email")):
+            raise serializers.ValidationError("Saisissez votre numéro ou l’email d’un ancien compte.")
+        return attrs
 
 
 class ReinitialisationMotDePasseSerializer(serializers.Serializer):
     uid = serializers.CharField(max_length=80)
     token = serializers.CharField(max_length=100)
-    nouveau_mot_de_passe = serializers.CharField(write_only=True, min_length=12, max_length=128)
+    nouveau_mot_de_passe = serializers.CharField(write_only=True, min_length=8, max_length=128)
 
 
 class DetteSerializer(serializers.ModelSerializer):

@@ -38,24 +38,24 @@ export function AuthProvider({ children }) {
     return () => { actif = false; window.removeEventListener("session-expiree", sessionExpiree); };
   }, []);
 
-  const connexion = useCallback(async (email, motDePasse) => {
+  const connexion = useCallback(async (identifiant, motDePasse, mode = "telephone") => {
     viderRequetesIdempotentesEnAttente();
     await initialiserCSRF();
-    const { data } = await api.post("/api/auth/connexion/", {
-      email: email.trim().toLowerCase(), mot_de_passe: motDePasse,
-    });
+    const cle = mode === "email" ? "email" : "telephone";
+    const valeurIdentifiant = mode === "email" ? identifiant.trim().toLowerCase() : identifiant.trim();
+    const { data } = await api.post("/api/auth/connexion/", { [cle]: valeurIdentifiant, mot_de_passe: motDePasse });
     localStorage.setItem("commercant", JSON.stringify(data.commercant));
     setCommercant(data.commercant);
     setConnecte(true);
   }, []);
 
-  const inscription = useCallback(async (email, telephone, motDePasse, nomBoutique, accepteConditions) => {
+  const inscription = useCallback(async (telephone, motDePasse, confirmationMotDePasse, nomBoutique, accepteConditions) => {
     await initialiserCSRF();
     await api.post("/api/auth/inscription/", {
-      email: email.trim().toLowerCase(), telephone, nom_boutique: nomBoutique,
-      mot_de_passe: motDePasse, accepte_conditions: accepteConditions,
+      telephone, nom_boutique: nomBoutique, mot_de_passe: motDePasse,
+      confirmation_mot_de_passe: confirmationMotDePasse, accepte_conditions: accepteConditions,
     });
-    await connexion(email, motDePasse);
+    await connexion(telephone, motDePasse, "telephone");
   }, [connexion]);
 
   const deconnexion = useCallback(async () => {

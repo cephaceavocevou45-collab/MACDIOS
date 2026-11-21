@@ -85,12 +85,12 @@ class SecuriteEtDonneesTests(TestCase):
         reglages = {"DEFAULT_THROTTLE_RATES": {"inscription": "1/minute", "refresh": "1/minute"}}
         with override_settings(REST_FRAMEWORK=reglages):
             premiere = self.api.post("/api/auth/inscription/", {
-                "email": "nouveau-a@example.test", "telephone": "+22992000003", "nom_boutique": "Nouveau",
-                "mot_de_passe": "MotDePasse123!", "accepte_conditions": True,
+                "telephone": "+22992000003", "nom_boutique": "Nouveau",
+                "mot_de_passe": "MotDePasse123!", "confirmation_mot_de_passe": "MotDePasse123!", "accepte_conditions": True,
             }, format="json")
             seconde = self.api.post("/api/auth/inscription/", {
-                "email": "nouveau-b@example.test", "telephone": "+22992000004", "nom_boutique": "Nouveau deux",
-                "mot_de_passe": "MotDePasse123!", "accepte_conditions": True,
+                "telephone": "+22992000004", "nom_boutique": "Nouveau deux",
+                "mot_de_passe": "MotDePasse123!", "confirmation_mot_de_passe": "MotDePasse123!", "accepte_conditions": True,
             }, format="json")
         self.assertEqual(premiere.status_code, 201, premiere.data)
         self.assertEqual(seconde.status_code, 429)
@@ -297,13 +297,13 @@ class SecuriteEtDonneesTests(TestCase):
 
     def test_inscription_exige_consentement_et_enregistre_sa_date(self):
         sans_consentement = self.api.post("/api/auth/inscription/", {
-            "email": "nouvelle-securite@example.test", "telephone": "+22992000003", "nom_boutique": "Nouvelle boutique",
-            "mot_de_passe": "MotDePasse123!", "accepte_conditions": False,
+            "telephone": "+22992000003", "nom_boutique": "Nouvelle boutique",
+            "mot_de_passe": "MotDePasse123!", "confirmation_mot_de_passe": "MotDePasse123!", "accepte_conditions": False,
         }, format="json")
         self.assertEqual(sans_consentement.status_code, 400)
         acceptee = self.api.post("/api/auth/inscription/", {
-            "email": "nouvelle-securite@example.test", "telephone": "+22992000003", "nom_boutique": "Nouvelle boutique",
-            "mot_de_passe": "MotDePasse123!", "accepte_conditions": True,
+            "telephone": "+22992000003", "nom_boutique": "Nouvelle boutique",
+            "mot_de_passe": "MotDePasse123!", "confirmation_mot_de_passe": "MotDePasse123!", "accepte_conditions": True,
         }, format="json")
         self.assertEqual(acceptee.status_code, 201, acceptee.data)
         self.assertIsNotNone(Commercant.objects.get(pk=acceptee.data["id"]).consentement_le)

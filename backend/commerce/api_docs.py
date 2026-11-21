@@ -10,7 +10,7 @@ class ReponseDetailSerializer(serializers.Serializer):
 
 class InscriptionReponseSerializer(serializers.Serializer):
     id = serializers.UUIDField()
-    email = serializers.EmailField()
+    email = serializers.EmailField(allow_null=True)
     telephone = serializers.CharField(allow_blank=True)
     nom_boutique = serializers.CharField()
 
@@ -48,7 +48,7 @@ class SessionReponseSerializer(serializers.Serializer):
 
 class ProfilReponseSerializer(serializers.Serializer):
     nom_affiche = serializers.CharField()
-    email = serializers.EmailField()
+    email = serializers.EmailField(allow_null=True)
     telephone = serializers.CharField(allow_blank=True)
     adresse = serializers.CharField(allow_blank=True)
     ville = serializers.CharField(allow_blank=True)

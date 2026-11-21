@@ -11,22 +11,27 @@ from .validators import normaliser_telephone_international, valider_telephone_be
 
 
 class CommercantManager(BaseUserManager):
-    """Crée les comptes avec une adresse email comme identifiant."""
+    """Crée les comptes avec un numéro, et garde l'email comme contact facultatif."""
 
-    def create_user(self, email, password=None, **extra_fields):
-        if not email:
-            raise ValueError("L'adresse email est obligatoire.")
-        email = self.normalize_email(email).strip().lower()
-        validate_email(email)
+    def create_user(self, email=None, password=None, **extra_fields):
+        if email:
+            email = self.normalize_email(email).strip().lower()
+            validate_email(email)
+        else:
+            email = None
         telephone = extra_fields.get("telephone", "")
         if telephone:
             extra_fields["telephone"] = normaliser_telephone_international(telephone)
+        elif not email:
+            raise ValueError("Un numéro de téléphone est obligatoire pour créer ce compte.")
         user = self.model(email=email, **extra_fields)
         user.set_password(password)
         user.save(using=self._db)
         return user
 
-    def create_superuser(self, email, password=None, **extra_fields):
+    def create_superuser(self, email=None, password=None, **extra_fields):
+        if not email:
+            raise ValueError("Un email est obligatoire pour créer un superutilisateur.")
         extra_fields.setdefault("is_staff", True)
         extra_fields.setdefault("is_superuser", True)
         extra_fields.setdefault("is_active", True)
@@ -44,7 +49,7 @@ def profil_logo_upload_to(instance, nom_fichier):
 class Commercant(AbstractUser):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     username = None
-    email = models.EmailField(max_length=254, unique=True)
+    email = models.EmailField(max_length=254, unique=True, null=True, blank=True)
     telephone = models.CharField(max_length=20, blank=True, validators=[valider_telephone_benin])
     nom_boutique = models.CharField(max_length=120)
     logo_profil = models.ImageField(upload_to=profil_logo_upload_to, null=True, blank=True)

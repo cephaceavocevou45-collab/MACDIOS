@@ -125,8 +125,8 @@ export default function MonProfil() {
 
       <div className="grid gap-5 sm:grid-cols-2">
         <Input label="Nom affiché" autoComplete="organization" maxLength={120} required value={profil.nom_affiche} onChange={(e) => setProfil({ ...profil, nom_affiche: e.target.value })}/>
-        <Input label="Adresse email" type="email" value={profil.email} readOnly hint="L&apos;adresse email de connexion ne se modifie pas ici."/>
-        <TelephoneInternational label="Téléphone de contact (facultatif)" value={profil.telephone} onChange={(telephone) => setProfil({ ...profil, telephone })} invalid={Boolean(profil.telephone) && !telephoneInternationalValide(profil.telephone)} hint="Visible sur les reçus. Choisissez le pays associé à votre numéro." langue={langue}/>
+        {profil.email && <Input label="Adresse email" type="email" value={profil.email} readOnly hint="Adresse de connexion de votre ancien compte."/>}
+        <TelephoneInternational label={profil.email ? "Téléphone de contact (facultatif)" : "Numéro de téléphone de connexion"} value={profil.telephone} onChange={(telephone) => setProfil({ ...profil, telephone })} invalid={Boolean(profil.telephone) && !telephoneInternationalValide(profil.telephone)} hint={profil.email ? "Visible sur les reçus. Choisissez le pays associé à votre numéro." : "Obligatoire · ce numéro sert à vous connecter."} langue={langue} required={!profil.email}/>
         <Input label="Ville" autoComplete="address-level2" maxLength={120} value={profil.ville} onChange={(e) => setProfil({ ...profil, ville: e.target.value })}/>
         <Input label="Adresse" autoComplete="street-address" maxLength={200} className="sm:col-span-2" value={profil.adresse} onChange={(e) => setProfil({ ...profil, adresse: e.target.value })}/>
       </div>

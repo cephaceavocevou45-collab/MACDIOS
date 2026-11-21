@@ -1,12 +1,15 @@
 """Authentification JWT par cookie HttpOnly, session serveur et protection CSRF."""
 
+from django.contrib.auth.backends import ModelBackend
+from django.core.exceptions import ValidationError
 from django.utils import timezone
 from rest_framework.authentication import CSRFCheck
 from rest_framework.exceptions import AuthenticationFailed, PermissionDenied
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework.permissions import SAFE_METHODS
 
-from .models import SessionJWT
+from .models import Commercant, SessionJWT
+from .validators import normaliser_telephone_international
 
 
 def verifier_csrf(request):
@@ -59,3 +62,23 @@ class CookieSessionJWTAuthentication(JWTAuthentication):
 
         utilisateur = self.get_user(jeton)
         return utilisateur, jeton
+
+
+class TelephoneBackend(ModelBackend):
+    """Authentifie par numéro sans changer l'identifiant des comptes historiques."""
+
+    def authenticate(self, request, username=None, password=None, telephone=None, **kwargs):
+        identifiant = telephone or username
+        if not identifiant or not password or "@" in str(identifiant):
+            return None
+        try:
+            numero = normaliser_telephone_international(str(identifiant).strip())
+        except ValidationError:
+            return None
+        comptes = Commercant.objects.filter(telephone=numero)
+        if comptes.count() != 1:
+            return None
+        utilisateur = comptes.first()
+        if utilisateur.check_password(password) and self.user_can_authenticate(utilisateur):
+            return utilisateur
+        return None

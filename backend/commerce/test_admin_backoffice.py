@@ -215,16 +215,17 @@ class BackOfficeTests(TestCase):
         configuration.actif = False
         configuration.save(update_fields=["actif", "modifie_le"])
         reponse = self.api.post("/api/auth/inscription/", {
-            "email": "sans-essai@example.test",
+            "telephone": "+22962030408",
             "nom_boutique": "Nouvelle boutique",
             "mot_de_passe": "MotDePasse123!",
+            "confirmation_mot_de_passe": "MotDePasse123!",
             "accepte_conditions": True,
         }, format="json")
         self.assertEqual(reponse.status_code, 201, reponse.data)
-        abonnement = Abonnement.objects.get(commercant__email="sans-essai@example.test")
+        abonnement = Abonnement.objects.get(commercant_id=reponse.data["id"])
         self.assertEqual(abonnement.statut, Abonnement.Statut.EXPIRE)
         self.assertEqual(abonnement.date_fin, abonnement.date_debut)
-        self.assertIn("n’est actuellement pas proposé", envoyer_email.call_args.args[2])
+        envoyer_email.assert_not_called()
 
     def test_offre_essai_publique_ne_expose_que_duree_et_disponibilite(self):
         ConfigurationEssai.objects.create(actif=True, duree_jours=21)

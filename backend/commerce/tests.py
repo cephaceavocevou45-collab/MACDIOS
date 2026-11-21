@@ -384,14 +384,14 @@ class CommerceAPITests(TestCase):
         csrf = entete_csrf(self.client_api)
         inscription = self.client_api.post(
             "/api/auth/inscription/",
-            {"email": "nouvelle@example.test", "telephone": "+22990000003", "nom_boutique": "Nouvelle", "mot_de_passe": "MotDePasse123!", "accepte_conditions": True},
+            {"telephone": "+22990000003", "nom_boutique": "Nouvelle", "mot_de_passe": "MotDePasse123!", "confirmation_mot_de_passe": "MotDePasse123!", "accepte_conditions": True},
             format="json",
             **csrf,
         )
         self.assertEqual(inscription.status_code, 201, inscription.data)
         connexion = self.client_api.post(
             "/api/auth/connexion/",
-            {"email": "nouvelle@example.test", "mot_de_passe": "MotDePasse123!"},
+            {"telephone": "+22990000003", "mot_de_passe": "MotDePasse123!"},
             format="json",
             **csrf,
         )
@@ -542,8 +542,8 @@ class AbonnementAPITests(TestCase):
 
     def test_inscription_cree_un_essai_de_quatorze_jours(self):
         response = self.api.post("/api/auth/inscription/", {
-            "email": "nouvelle-abonnement@example.test", "telephone": "+22991000003", "nom_boutique": "Nouvelle boutique",
-            "mot_de_passe": "MotDePasse123!",
+            "telephone": "+22991000003", "nom_boutique": "Nouvelle boutique",
+            "mot_de_passe": "MotDePasse123!", "confirmation_mot_de_passe": "MotDePasse123!",
             "accepte_conditions": True,
         }, format="json")
         self.assertEqual(response.status_code, 201)

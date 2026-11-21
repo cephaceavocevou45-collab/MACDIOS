@@ -389,6 +389,7 @@ button { cursor: pointer; }
 .footer-brand p { max-width: 390px; color: #334b66; font-size: 14px; line-height: 1.7; }
 .footer-brand .brand-light { color: #132d47; }
 .footer-brand .brand-mark { background: linear-gradient(145deg, #087da5, #13b5d2); }
+.footer-brand .macdios-wordmark { width:190px; mix-blend-mode:multiply; }
 .footer-column h3 { margin: 3px 0 14px; color: #17324d; font-size: 11px; font-weight: 750; letter-spacing: .1em; text-transform: uppercase; }
 .footer-column a, .footer-column address, .footer-column span { display: block; margin: 9px 0; color: #334b66; font-size: 13px; font-style: normal; line-height: 1.5; overflow-wrap: anywhere; }
 .footer-column a:hover { color: #087da5; text-decoration: underline; text-underline-offset: 3px; }
@@ -400,6 +401,7 @@ button { cursor: pointer; }
 .application-footer-compact-inner { display:flex; min-height:36px; align-items:center; justify-content:space-between; gap:18px; }
 .application-footer-brand { flex:none; gap:8px; color:var(--ink)!important; font-size:14px; font-weight:700; }
 .application-footer-brand .brand-mark { width:29px; height:29px; border-radius:9px; font-size:14px; }
+.application-footer-brand .macdios-wordmark { width:170px; mix-blend-mode:multiply; }
 .application-footer-links { display:flex; flex-wrap:wrap; justify-content:center; gap:18px; }
 .application-footer-links a,.application-footer-copyright { color:#6b7b74; font-size:11px; line-height:1.5; }
 .application-footer-links a:hover { color:var(--brand); text-decoration:underline; text-underline-offset:3px; }

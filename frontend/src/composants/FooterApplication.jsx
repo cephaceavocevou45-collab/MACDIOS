@@ -31,7 +31,7 @@ export default function FooterApplication({ compact = false }) {
 
   if (compact) return <footer className="public-footer application-footer-compact" id="contact">
     <div className="public-container application-footer-compact-inner">
-      <Link className="brand-lockup brand-light application-footer-brand" to="/"><span className="brand-mark">{branding.logoMark}</span>{branding.appName}</Link>
+      <Link className="brand-lockup brand-light application-footer-brand" to="/" aria-label={branding.appName}><img className="macdios-wordmark" src="/macdios-wordmark.png" alt={branding.appName} /></Link>
       <nav className="application-footer-links" aria-label={traduire("Liens utiles")}>
         <Link to="/contact" state={{ retourVers: pathname }}>{<TexteLocalise phrase={"Contactez-nous"} />}</Link>
         <Link to="/conditions" state={{ retourVers: pathname }}>{<TexteLocalise phrase={"Conditions d’utilisation"} />}</Link>
@@ -45,7 +45,7 @@ export default function FooterApplication({ compact = false }) {
     <div className="public-container">
       <div className="footer-grid">
         <div className="footer-brand">
-          <Link className="brand-lockup brand-light" to="/"><span className="brand-mark">{branding.logoMark}</span>{branding.appName}</Link>
+          <Link className="brand-lockup brand-light" to="/" aria-label={branding.appName}><img className="macdios-wordmark" src="/macdios-wordmark.png" alt={branding.appName} /></Link>
           <p>{branding.appDescription}{' '}{<TexteLocalise phrase={"Un outil simple pour mieux suivre les ventes, les produits et les clients."} />}</p>
           {réseauxConfigurés.length > 0 && <div className="social-links">{réseauxConfigurés.map(([réseau, url]) => <a key={réseau} className="social-link" href={url} target="_blank" rel="noreferrer" aria-label={nomsReseaux[réseau]}><IcôneRéseau name={réseau}/></a>)}</div>}
         </div>
