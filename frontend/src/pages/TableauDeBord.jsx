@@ -10,7 +10,7 @@ import { formaterFCFA } from "../utils";
 import { localePourLangue, TexteLocalise, traduire, useLangue } from "../contexte/LangueContext";
 
 const statistiques = [
-  { cle: "ventes_jour", titre: "Chiffre d’affaires aujourd’hui", icon: "cart", couleur: "#eaf5ef", encre: "#0c765c" },
+  { cle: "ventes_jour", titre: "Chiffre d’affaires aujourd’hui", icon: "cart", couleur: "#eaf5ef", encre: "#006747" },
   { cle: "ventes_semaine", titre: "Chiffre d’affaires cette semaine", icon: "chart", couleur: "#fff2df", encre: "#ac7016" },
   { cle: "ventes_mois", titre: "Chiffre d’affaires ce mois", icon: "wallet", couleur: "#edf0fa", encre: "#5868a7" },
   { cle: "benefice_brut_jour", titre: "Bénéfice brut aujourd’hui", icon: "chart", couleur: "#e8f6f2", encre: "#087d69" },

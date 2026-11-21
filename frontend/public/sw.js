@@ -1,5 +1,5 @@
-const CACHE_ACTUEL = "gestion-commerce-shell-v1";
-const FICHIERS_HORS_LIGNE = ["/", "/offline.html", "/app-icon.svg", "/app-icon-192.png", "/app-icon-512.png"];
+const CACHE_ACTUEL = "gestion-commerce-shell-v2";
+const FICHIERS_HORS_LIGNE = ["/", "/offline.html", "/app-icon-192.png", "/app-icon-512.png"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(CACHE_ACTUEL).then((cache) => cache.addAll(FICHIERS_HORS_LIGNE)));

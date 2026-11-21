@@ -8,14 +8,14 @@ export const branding = {
   logoMark: "M",
   // Palette utilisée uniquement par la page publique.
   palette: {
-    primary: "#17324D",
-    primaryDark: "#102538",
-    accent: "#D59A35",
-    background: "#F6F8FB",
-    ink: "#1F3144",
-    muted: "#66788A",
-    soft: "#EDF3F8",
-    line: "#E1E8EF",
+    primary: "#006747",
+    primaryDark: "#004d38",
+    accent: "#e9a900",
+    background: "#f7f9f6",
+    ink: "#17332a",
+    muted: "#66786f",
+    soft: "#e9f5ef",
+    line: "#dce8de",
   },
   contact: {
     email: "cephacemacevo@gmail.com",

@@ -28,21 +28,21 @@ button { cursor: pointer; }
 .password-field-wrap { position: relative; display: block; }
 .password-field-control { padding-right: 3.25rem !important; }
 .password-visibility-toggle { position: absolute; top: 50%; right: .75rem; display: inline-flex; width: 2rem; height: 2rem; align-items: center; justify-content: center; transform: translateY(-50%); border: 0; border-radius: .5rem; background: transparent; color: #60736c; }
-.password-visibility-toggle:hover { background: #edf5f1; color: #0c765c; }
-.password-visibility-toggle:focus-visible { outline: 2px solid #0c765c; outline-offset: 2px; }
+.password-visibility-toggle:hover { background: #edf5f1; color: #006747; }
+.password-visibility-toggle:focus-visible { outline: 2px solid #006747; outline-offset: 2px; }
 .pwa-install-card { position: fixed; z-index: 90; right: 16px; bottom: max(16px, env(safe-area-inset-bottom)); display: flex; width: min(460px, calc(100vw - 32px)); align-items: center; gap: 12px; border: 1px solid #dce8e0; border-radius: 16px; background: #fff; padding: 14px 48px 14px 16px; box-shadow: 0 12px 36px rgb(21 43 37 / 18%); }
 .pwa-install-copy { display: grid; flex: 1; gap: 4px; color: #152b25; font-size: 13px; line-height: 1.4; }
 .pwa-install-copy span { color: #60736c; font-size: 12px; }
-.pwa-install-action { min-height: 40px; flex: none; border: 0; border-radius: 10px; background: #0c765c; padding: 0 14px; color: #fff; font-size: 13px; font-weight: 700; }
-.pwa-install-action:hover { background: #075b47; }
-.pwa-install-action:focus-visible,.pwa-install-close:focus-visible { outline: 2px solid #0c765c; outline-offset: 2px; }
+.pwa-install-action { min-height: 40px; flex: none; border: 0; border-radius: 10px; background: #006747; padding: 0 14px; color: #fff; font-size: 13px; font-weight: 700; }
+.pwa-install-action:hover { background: #004d38; }
+.pwa-install-action:focus-visible,.pwa-install-close:focus-visible { outline: 2px solid #006747; outline-offset: 2px; }
 .pwa-install-close { position: absolute; top: 7px; right: 8px; display: grid; width: 30px; height: 30px; place-items: center; border: 0; border-radius: 8px; background: transparent; color: #60736c; font-size: 22px; }
 .pwa-install-close:hover { background: #edf5f1; }
 .admin-password-wrap { position: relative; display: block; }
 .admin-password-wrap input { padding-right: 38px !important; }
 .admin-password-wrap .password-visibility-toggle { right: 5px; width: 28px; height: 28px; }
 
-:root { --brand: #0c765c; --brand-dark: #075b47; --accent: #f3a94c; --line: #e4ebe6; --ink: #152b25; --muted: #60736c; }
+:root { --brand: #006747; --brand-dark: #004d38; --accent: #e9a900; --line: #e4ebe6; --ink: #152b25; --muted: #60736c; }
 
 /* Éléments partagés de l'espace commerçant */
 .app-workspace { min-height: 100vh; background: #f5f8f5; }
@@ -50,7 +50,7 @@ button { cursor: pointer; }
 .sidebar-brand { display: flex; align-items: center; gap: 11px; padding: 0 9px 30px; }
 .sidebar-nav { display: grid; gap: 6px; }
 .sidebar-link { display: flex; align-items: center; gap: 12px; border-radius: 12px; padding: 12px 13px; color: #60736c; font-size: 14px; font-weight: 600; transition: .18s ease; }
-.sidebar-link:hover, .sidebar-link.active { background: #e9f5ef; color: #0c765c; }
+.sidebar-link:hover, .sidebar-link.active { background: #e9f5ef; color: #006747; }
 .sidebar-bottom { margin-top: auto; border-top: 1px solid var(--line); padding-top: 17px; }
 .workspace-main { min-height: 100vh; margin-left: 254px; }
 .workspace-topbar { position: sticky; z-index: 20; top: 0; display: flex; min-height: 72px; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--line); background: rgb(255 255 255 / 92%); padding: 0 34px; backdrop-filter: blur(12px); }
@@ -134,10 +134,10 @@ button { cursor: pointer; }
 /* Back-office distinct de l’espace commerçant : dense, sobre et orienté tableaux. */
 .admin-shell { --admin-ink:#172536; --admin-muted:#6d7b8a; --admin-line:#e0e6ed; --admin-blue:#244a70; --admin-bg:#f3f5f8; min-height:100vh; background:var(--admin-bg); color:var(--admin-ink); font-family:Inter,"Segoe UI",sans-serif; font-size:13px; }
 .admin-sidebar { position:fixed; z-index:20; inset:0 auto 0 0; display:flex; width:246px; flex-direction:column; border-right:1px solid var(--admin-line); background:#fff; padding:22px 15px 14px; }
-.admin-brand { display:flex; align-items:center; gap:10px; padding:0 10px 25px; color:#18283a; font-size:19px; font-weight:750; letter-spacing:-.04em; }
+.admin-brand { display:flex; align-items:center; gap:10px; padding:0 10px 25px; color:#006747; font-size:19px; font-weight:750; letter-spacing:-.04em; }
 .admin-brand > span:last-child { display:grid; gap:1px; }
 .admin-brand small { color:#8390a0; font-size:9px; font-weight:700; letter-spacing:.13em; }
-.admin-brand-mark { display:grid; width:34px; height:34px; place-items:center; border-radius:9px; background:#234768; color:white; font-size:18px; }
+.admin-brand-mark { display:grid; width:34px; height:34px; place-items:center; border-radius:9px; background:#fff url('/app-icon-192.png') center / cover no-repeat; color:transparent; font-size:0; }
 .admin-menu-label { padding:5px 11px 10px; color:#9aa4b0; font-size:10px; font-weight:800; letter-spacing:.14em; }
 .admin-nav { display:grid; gap:4px; }
 .admin-nav-link { display:flex; min-height:39px; align-items:center; gap:11px; border-radius:7px; padding:8px 11px; color:#596777; font-size:12px; font-weight:600; }
@@ -284,8 +284,9 @@ button { cursor: pointer; }
 .public-container { width: min(1160px,calc(100% - 48px)); margin: 0 auto; }
 .public-header { position: fixed; z-index: 50; inset: 0 0 auto; border-bottom: 1px solid rgb(219 231 222 / 75%); background: rgb(251 252 250 / 91%); backdrop-filter: blur(14px); }
 .public-header-inner { display: flex; height: 76px; align-items: center; justify-content: space-between; gap: 20px; }
-.brand-lockup { display: inline-flex; align-items: center; gap: 10px; font-size: 20px; font-weight: 700; letter-spacing: -.04em; }
-.brand-mark { display: grid; width: 37px; height: 37px; place-items: center; border-radius: 13px; background: var(--brand); color: #fff; font-size: 21px; font-weight: 700; }
+.brand-lockup { display: inline-flex; align-items: center; gap: 10px; color: #006747; font-size: 20px; font-weight: 700; letter-spacing: -.04em; }
+.macdios-wordmark { display:block; width:210px; height:auto; }
+.brand-mark { display: grid; width: 37px; height: 37px; flex: 0 0 auto; place-items: center; border: 1px solid #e4ebe6; border-radius: 13px; background: #fff url('/app-icon-192.png') center / cover no-repeat; color: transparent; font-size: 0; font-weight: 700; }
 .public-links { display: flex; align-items: center; gap: 27px; color: #62766c; font-size: 13px; font-weight: 550; }
 .public-links a:hover { color: var(--brand); }
 .public-actions { display: flex; align-items: center; gap: 10px; }
@@ -580,6 +581,7 @@ a.contact-detail:hover strong { text-decoration: underline; text-underline-offse
   .public-container { width: min(100% - 32px,560px); }
   .public-header-inner { height: 66px; }
   .brand-lockup { font-size: 18px; }
+  .macdios-wordmark { width:170px; }
   .public-links { position: absolute; top: 65px; right: 12px; left: 12px; display: none; align-items: stretch; gap: 0; border: 1px solid #e3ece4; border-radius: 16px; background: white; padding: 9px; box-shadow: 0 15px 35px rgb(21 50 36 / 13%); }
   .public-links.is-open { display: grid; }
   .public-links a { border-radius: 10px; padding: 12px; }
@@ -795,6 +797,21 @@ html[data-density="confortable"] .workspace-content { padding-top:36px; padding-
 .public-page .cta-panel p { color: #d1deea; }
 .public-page .public-footer { background: #f0f2ff; }
 .public-page .footer-brand .brand-mark { background: linear-gradient(145deg, #087da5, #13b5d2); }
+
+/* Le symbole MACDIOS remplace l'initiale sur toutes les interfaces. */
+.brand-mark,
+.admin-brand-mark,
+.public-page .brand-mark,
+.public-page .footer-brand .brand-mark {
+  background-color: #fff;
+  background-image: url('/app-icon-192.png') !important;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: cover;
+  box-shadow: none;
+  color: transparent;
+  font-size: 0;
+}
 
 .public-page.reveal-ready [data-reveal] { opacity: 0; transform: translateY(20px); transition: opacity .65s ease,transform .65s ease; }
 .public-page.reveal-ready [data-reveal].is-visible { opacity: 1; transform: translateY(0); }

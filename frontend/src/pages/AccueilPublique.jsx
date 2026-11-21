@@ -34,7 +34,7 @@ const questions = [
 ];
 
 function Marque({ clair = false }) {
-  return <span className={`brand-lockup ${clair ? "brand-light" : ""}`}><span className="brand-mark">{branding.logoMark}</span>{branding.appName}</span>;
+  return <span className={`brand-lockup ${clair ? "brand-light" : ""}`}><img className="macdios-wordmark" src="/macdios-wordmark.png" alt={branding.appName} /></span>;
 }
 
 function ApercuApplication() {
