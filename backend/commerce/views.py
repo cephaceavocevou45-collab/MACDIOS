@@ -1029,7 +1029,18 @@ def reprendre_paiement_abonnement(request, reference):
     if paiement is None:
         return Response({"detail": "Paiement introuvable."}, status=status.HTTP_404_NOT_FOUND)
     if paiement.statut == PaiementAbonnementHistorique.Statut.EN_ATTENTE:
-        paiement = actualiser_paiement(paiement)
+        try:
+            paiement = actualiser_paiement(paiement)
+        except APIException:
+            # FedaPay peut être temporairement indisponible : reprendre ici le
+            # lien déjà créé réutilise la même transaction et évite un doublon.
+            if paiement.checkout_url:
+                return Response({
+                    "statut": paiement.statut,
+                    "checkout_url": paiement.checkout_url,
+                    "verification_indisponible": True,
+                })
+            raise
     if paiement.statut != PaiementAbonnementHistorique.Statut.EN_ATTENTE:
         return Response({"statut": paiement.statut, "detail": "Ce paiement ne peut plus être repris. Actualisez son état."}, status=status.HTTP_409_CONFLICT)
     if not paiement.checkout_url:
