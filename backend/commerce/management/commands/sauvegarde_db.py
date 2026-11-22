@@ -5,10 +5,12 @@ from hashlib import sha256
 from io import StringIO
 from pathlib import Path
 import gzip
+import uuid
 
 from cryptography.fernet import Fernet
 from django.conf import settings
 from django.core.management import BaseCommand, call_command, CommandError
+from commerce.backup_storage import client_s3, cle_objet_s3
 
 
 class Command(BaseCommand):
@@ -34,8 +36,8 @@ class Command(BaseCommand):
         call_command("dumpdata", exclude=["contenttypes", "sessions"], indent=2, stdout=texte, verbosity=0)
         chiffre = chiffreur.encrypt(gzip.compress(texte.getvalue().encode("utf-8"), mtime=0))
         empreinte = sha256(chiffre).hexdigest()
-        date = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-        nom = f"sauvegarde_{date}.json.gz.fernet"
+        date = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S_%fZ")
+        nom = f"sauvegarde_{date}_{uuid.uuid4().hex[:8]}.json.gz.fernet"
 
         destination = options.get("sortie")
         if destination:
@@ -51,14 +53,29 @@ class Command(BaseCommand):
             self.stdout.write(self.style.SUCCESS(f"Copie locale chiffrée créée : {destination}"))
 
         if settings.BACKUP_S3_BUCKET:
-            import boto3
-            s3 = boto3.client("s3", region_name=settings.AWS_REGION or None, endpoint_url=settings.AWS_ENDPOINT_URL or None)
-            cle = f"{settings.BACKUP_S3_PREFIX}/{nom}" if settings.BACKUP_S3_PREFIX else nom
-            s3.put_object(
-                Bucket=settings.BACKUP_S3_BUCKET, Key=cle, Body=chiffre,
-                ServerSideEncryption="AES256", Metadata={"sha256": empreinte, "format": "fernet-gzip-json"},
-            )
-            self.stdout.write(self.style.SUCCESS(f"Copie chiffrée envoyée au stockage externe : {cle}"))
+            cle = cle_objet_s3(nom)
+            try:
+                s3 = client_s3()
+                parametres = dict(
+                    Bucket=settings.BACKUP_S3_BUCKET,
+                    Key=cle,
+                    Body=chiffre,
+                    ContentType="application/octet-stream",
+                    Metadata={"sha256": empreinte, "format": "fernet-gzip-json"},
+                )
+                if settings.BACKUP_S3_SERVER_SIDE_ENCRYPTION:
+                    parametres["ServerSideEncryption"] = settings.BACKUP_S3_SERVER_SIDE_ENCRYPTION
+                s3.put_object(**parametres)
+                confirmation = s3.head_object(Bucket=settings.BACKUP_S3_BUCKET, Key=cle)
+                if confirmation.get("Metadata", {}).get("sha256") != empreinte:
+                    raise CommandError("La vérification de la sauvegarde S3 a échoué.")
+            except CommandError:
+                raise
+            except Exception as erreur:
+                raise CommandError(
+                    "L'envoi ou la vérification S3 a échoué. Vérifiez le bucket, la région et les droits IAM."
+                ) from erreur
+            self.stdout.write(self.style.SUCCESS(f"Copie chiffrée envoyée et vérifiée sur S3 : {cle}"))
         elif not destination and not settings.EST_PRODUCTION:
             destination = Path.cwd() / "backups" / nom
             destination.parent.mkdir(parents=True, exist_ok=True)

@@ -145,10 +145,13 @@ else:
     }
 
 BACKUP_ENCRYPTION_KEY = config("BACKUP_ENCRYPTION_KEY", default="").strip()
-BACKUP_S3_BUCKET = config("BACKUP_S3_BUCKET", default="").strip()
+BACKUP_S3_BUCKET = config("BACKUP_S3_BUCKET", default=config("BUCKET", default="")).strip()
 BACKUP_S3_PREFIX = config("BACKUP_S3_PREFIX", default="nobi/database").strip("/")
-AWS_REGION = config("AWS_REGION", default="")
-AWS_ENDPOINT_URL = config("AWS_ENDPOINT_URL", default="")
+AWS_REGION = config("AWS_REGION", default=config("REGION", default="")).strip()
+AWS_ENDPOINT_URL = config("AWS_ENDPOINT_URL", default=config("ENDPOINT", default="")).strip()
+AWS_ACCESS_KEY_ID = config("AWS_ACCESS_KEY_ID", default=config("ACCESS_KEY_ID", default="")).strip()
+AWS_SECRET_ACCESS_KEY = config("AWS_SECRET_ACCESS_KEY", default=config("SECRET_ACCESS_KEY", default="")).strip()
+BACKUP_S3_SERVER_SIDE_ENCRYPTION = config("BACKUP_S3_SERVER_SIDE_ENCRYPTION", default="").strip()
 SAUVEGARDE_S3_ACTIVE = bool(BACKUP_ENCRYPTION_KEY and BACKUP_S3_BUCKET)
 if EST_PRODUCTION and not SAUVEGARDE_S3_ACTIVE:
     warnings.warn(

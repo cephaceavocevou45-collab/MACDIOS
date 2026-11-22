@@ -7,6 +7,8 @@ import re
 import tempfile
 import unittest
 from datetime import timedelta
+from hashlib import sha256
+from io import BytesIO
 from pathlib import Path
 from unittest.mock import patch
 
@@ -280,6 +282,59 @@ class SecuriteEtDonneesTests(TestCase):
             with override_settings(BACKUP_ENCRYPTION_KEY=cle, EST_PRODUCTION=False):
                 call_command("restaure_db", fichier, verbosity=0)
             self.assertTrue(Produit.objects.filter(pk=identifiant_produit).exists())
+
+    def test_sauvegarde_s3_est_verifiee_et_peut_etre_restauree_directement(self):
+        produit = Produit.objects.create(commercant=self.user, nom="Produit S3", prix=900, quantite_stock=3)
+        cle = Fernet.generate_key().decode("ascii")
+        with patch("commerce.management.commands.sauvegarde_db.client_s3") as creer_client:
+            s3 = creer_client.return_value
+            s3.head_object.side_effect = lambda **kwargs: {
+                "Metadata": {"sha256": s3.put_object.call_args.kwargs["Metadata"]["sha256"]}
+            }
+            with override_settings(
+                BACKUP_ENCRYPTION_KEY=cle,
+                BACKUP_S3_BUCKET="bucket-test",
+                BACKUP_S3_PREFIX="macdios/database",
+                EST_PRODUCTION=False,
+            ):
+                call_command("sauvegarde_db", verbosity=0)
+
+            depot = s3.put_object.call_args.kwargs
+            self.assertEqual(depot["Bucket"], "bucket-test")
+            self.assertTrue(depot["Key"].startswith("macdios/database/sauvegarde_"))
+            self.assertNotIn("ServerSideEncryption", depot)
+            self.assertEqual(depot["Metadata"]["sha256"], sha256(depot["Body"]).hexdigest())
+            self.assertTrue(depot["Body"].startswith(b"gAAAA"))
+
+            produit_id = produit.pk
+            produit.delete()
+            s3.get_object.return_value = {
+                "Body": BytesIO(depot["Body"]),
+                "Metadata": depot["Metadata"],
+            }
+            with override_settings(
+                BACKUP_ENCRYPTION_KEY=cle,
+                BACKUP_S3_BUCKET="bucket-test",
+                EST_PRODUCTION=False,
+            ):
+                call_command("restaure_db", "--s3-key", depot["Key"], verbosity=0)
+
+        self.assertTrue(Produit.objects.filter(pk=produit_id).exists())
+
+    def test_restauration_s3_refuse_une_empreinte_invalide(self):
+        cle = Fernet.generate_key().decode("ascii")
+        with patch("commerce.management.commands.restaure_db.client_s3") as creer_client:
+            creer_client.return_value.get_object.return_value = {
+                "Body": BytesIO(b"fichier altere"),
+                "Metadata": {"sha256": "empreinte-incorrecte"},
+            }
+            with override_settings(
+                BACKUP_ENCRYPTION_KEY=cle,
+                BACKUP_S3_BUCKET="bucket-test",
+                EST_PRODUCTION=False,
+            ):
+                with self.assertRaisesMessage(CommandError, "empreinte SHA-256 est invalide"):
+                    call_command("restaure_db", "--s3-key", "macdios/database/sauvegarde-invalide", verbosity=0)
 
     def test_sauvegarde_production_sans_s3_echoue_sans_creer_de_fichier(self):
         cle = Fernet.generate_key().decode("ascii")
