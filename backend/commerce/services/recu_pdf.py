@@ -2,6 +2,7 @@
 
 from decimal import Decimal
 from io import BytesIO
+from pathlib import Path
 from xml.sax.saxutils import escape
 
 import qrcode
@@ -45,6 +46,18 @@ def _creer_qr(url):
     qr.make_image(fill_color=COULEUR_TEXTE, back_color="white").save(tampon, format="PNG")
     tampon.seek(0)
     return tampon
+
+
+def _logo_application_pdf():
+    """Charge le wordmark embarqué dans l'image backend, ou depuis le dépôt en local."""
+    logo_image = Path(__file__).resolve().parents[3] / "frontend" / "public" / "macdios-wordmark.png"
+    logo_embarque = Path(__file__).resolve().parents[2] / "commerce" / "macdios-wordmark.png"
+    for chemin in (logo_embarque, logo_image):
+        try:
+            return chemin.read_bytes()
+        except OSError:
+            continue
+    return None
 
 
 def construire_recu_certifie(
@@ -104,27 +117,42 @@ def construire_recu_certifie(
         fontSize=8, leading=11, textColor=colors.HexColor(COULEUR_TEXTE), alignment=TA_CENTER,
     ))
 
-    visuel_proprietaire = (
-        Image(BytesIO(logo_proprietaire), width=13 * mm, height=13 * mm, kind="proportional")
-        if logo_proprietaire else Paragraph(_texte(initiales_proprietaire), styles["RecuMonogramme"])
+    logo_application = _logo_application_pdf()
+    visuel_application = (
+        Image(BytesIO(logo_application), width=62 * mm, height=15 * mm, kind="proportional")
+        if logo_application else Paragraph(_texte(NOM_APPLICATION), styles["RecuMarque"])
     )
+    if logo_proprietaire:
+        visuel_commercant = Image(BytesIO(logo_proprietaire), width=16 * mm, height=16 * mm, kind="proportional")
+    else:
+        visuel_commercant = Table(
+            [[Paragraph(_texte(initiales_proprietaire), styles["RecuMonogramme"])]],
+            colWidths=[16 * mm], rowHeights=[16 * mm],
+        )
+        visuel_commercant.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor(COULEUR_APPLICATION)),
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ("LEFTPADDING", (0, 0), (-1, -1), 0),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+        ]))
     marque = Table([[
-        visuel_proprietaire,
-        Paragraph(_texte(NOM_APPLICATION), styles["RecuMarque"]),
+        visuel_application,
         Paragraph("REÇU CERTIFIÉ", ParagraphStyle(
             "RecuEtiquette", parent=styles["RecuCentre"], fontName="Helvetica-Bold",
-            textColor=colors.HexColor(COULEUR_APPLICATION), alignment=TA_RIGHT,
+            textColor=colors.HexColor(COULEUR_APPLICATION), alignment=TA_CENTER,
         )),
-    ]], colWidths=[15 * mm, 95 * mm, 62 * mm])
+        visuel_commercant,
+    ]], colWidths=[64 * mm, 89 * mm, 19 * mm])
     marque.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (0, 0), colors.HexColor(COULEUR_APPLICATION)),
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-        ("LEFTPADDING", (0, 0), (0, 0), 2 * mm),
-        ("RIGHTPADDING", (0, 0), (0, 0), 2 * mm),
+        ("ALIGN", (0, 0), (0, 0), "LEFT"),
+        ("ALIGN", (1, 0), (1, 0), "CENTER"),
+        ("ALIGN", (2, 0), (2, 0), "RIGHT"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 0),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 0),
         ("TOPPADDING", (0, 0), (-1, -1), 3 * mm),
         ("BOTTOMPADDING", (0, 0), (-1, -1), 3 * mm),
-        ("LEFTPADDING", (1, 0), (-1, -1), 4 * mm),
-        ("LINEBELOW", (1, 0), (-1, -1), 0.7, colors.HexColor(COULEUR_LIGNE)),
+        ("LINEBELOW", (0, 0), (-1, -1), 0.7, colors.HexColor(COULEUR_LIGNE)),
     ]))
 
     details = []

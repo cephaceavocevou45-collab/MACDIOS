@@ -53,9 +53,9 @@ class ProfilPDFTests(TestCase):
         sans_logo = self.construire_recu()
         self.assertTrue(avec_logo.startswith(b"%PDF"))
         self.assertTrue(sans_logo.startswith(b"%PDF"))
-        # Un reçu sans logo garde le QR code; le reçu avec logo contient une image de plus.
-        self.assertEqual(nombre_images(sans_logo), 1)
-        self.assertEqual(nombre_images(avec_logo), 2)
+        # Le wordmark MACDIOS et le QR restent présents, plus le logo boutique si fourni.
+        self.assertEqual(nombre_images(sans_logo), 2)
+        self.assertEqual(nombre_images(avec_logo), 3)
 
     @patch("commerce.services.profil_image.cloudinary.utils.private_download_url", return_value="https://cloudinary.test/signe")
     @patch("commerce.services.profil_image.requests.get")
@@ -79,7 +79,7 @@ class ProfilPDFTests(TestCase):
         pdf = self.construire_recu(logo)
         self.assertIsNone(logo)
         self.assertTrue(pdf.startswith(b"%PDF"))
-        self.assertEqual(nombre_images(pdf), 1)
+        self.assertEqual(nombre_images(pdf), 2)
 
     @patch("commerce.services.export_pdf.logo_profil_pour_pdf", return_value=None)
     def test_export_pdf_inclut_les_champs_du_profil(self, sans_logo):

@@ -12,6 +12,7 @@ RUN addgroup --system django && adduser --system --ingroup django django \
 COPY backend/requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 COPY --chown=django:django backend/ /app/
+COPY --chown=django:django frontend/public/macdios-wordmark.png /app/commerce/macdios-wordmark.png
 
 USER django
 EXPOSE 8000
