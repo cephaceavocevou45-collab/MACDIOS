@@ -976,7 +976,16 @@ def historique_abonnement(request):
     return _reponse_liste_paginee(request, paiements, PaiementAbonnementHistoriqueSerializer)
 
 
-@extend_schema(tags=["Abonnement"], summary="Créer un paiement FedaPay pour une formule")
+@extend_schema(
+    tags=["Abonnement"], summary="Créer un paiement FedaPay pour une formule",
+    request=inline_serializer(name="CreationPaiementFedaPay", fields={"plan_id": serializers.IntegerField()}),
+    responses={
+        201: inline_serializer(name="PaiementFedaPayCree", fields={
+            "reference": serializers.UUIDField(), "checkout_url": serializers.URLField(),
+        }),
+        400: EXEMPLE_ERREUR, 401: EXEMPLE_NON_AUTORISE, 404: EXEMPLE_ERREUR, 409: EXEMPLE_ERREUR, 503: EXEMPLE_ERREUR,
+    },
+)
 @api_view(["POST"])
 @permission_classes([EstCommercantAuthentifie])
 def creer_paiement_abonnement(request):
@@ -1006,7 +1015,18 @@ def creer_paiement_abonnement(request):
     return Response({"reference": str(paiement.reference), "checkout_url": url}, status=status.HTTP_201_CREATED)
 
 
-@extend_schema(tags=["Abonnement"], summary="Vérifier l'état d'un paiement FedaPay")
+@extend_schema(
+    tags=["Abonnement"], summary="Vérifier l'état d'un paiement FedaPay",
+    responses={
+        200: inline_serializer(name="EtatPaiementFedaPay", fields={
+            "reference": serializers.UUIDField(), "statut": serializers.CharField(),
+            "nom_boutique": serializers.CharField(), "plan_nom": serializers.CharField(),
+            "montant": serializers.DecimalField(max_digits=12, decimal_places=2),
+            "reclamation_deja_envoyee": serializers.BooleanField(),
+        }),
+        401: EXEMPLE_NON_AUTORISE, 404: EXEMPLE_ERREUR, 502: EXEMPLE_ERREUR,
+    },
+)
 @api_view(["GET"])
 @permission_classes([EstCommercantAuthentifie])
 def verifier_paiement_abonnement(request, reference):
@@ -1021,7 +1041,18 @@ def verifier_paiement_abonnement(request, reference):
                      "reclamation_deja_envoyee": hasattr(paiement, "reclamation")})
 
 
-@extend_schema(tags=["Abonnement"], summary="Reprendre un paiement FedaPay en attente")
+@extend_schema(
+    tags=["Abonnement"], summary="Reprendre un paiement FedaPay en attente",
+    request=None,
+    responses={
+        200: inline_serializer(name="PaiementFedaPayRepris", fields={
+            "statut": serializers.CharField(), "checkout_url": serializers.URLField(required=False),
+            "verification_indisponible": serializers.BooleanField(required=False),
+            "detail": serializers.CharField(required=False),
+        }),
+        401: EXEMPLE_NON_AUTORISE, 404: EXEMPLE_ERREUR, 409: EXEMPLE_ERREUR, 502: EXEMPLE_ERREUR,
+    },
+)
 @api_view(["POST"])
 @permission_classes([EstCommercantAuthentifie])
 def reprendre_paiement_abonnement(request, reference):
@@ -1048,7 +1079,16 @@ def reprendre_paiement_abonnement(request, reference):
     return Response({"statut": paiement.statut, "checkout_url": paiement.checkout_url})
 
 
-@extend_schema(tags=["Abonnement"], summary="Annuler le suivi local d'un paiement en attente")
+@extend_schema(
+    tags=["Abonnement"], summary="Annuler le suivi local d'un paiement en attente",
+    request=None,
+    responses={
+        200: inline_serializer(name="PaiementFedaPayAnnule", fields={
+            "reference": serializers.UUIDField(), "statut": serializers.CharField(),
+        }),
+        401: EXEMPLE_NON_AUTORISE, 404: EXEMPLE_ERREUR, 502: EXEMPLE_ERREUR,
+    },
+)
 @api_view(["POST"])
 @permission_classes([EstCommercantAuthentifie])
 def annuler_paiement_abonnement(request, reference):
@@ -1066,7 +1106,18 @@ def annuler_paiement_abonnement(request, reference):
     return Response({"reference": str(paiement.reference), "statut": paiement.statut})
 
 
-@extend_schema(tags=["Abonnement"], summary="Signaler un problème après l'annulation d'un paiement")
+@extend_schema(
+    tags=["Abonnement"], summary="Signaler un problème après l'annulation d'un paiement",
+    request=inline_serializer(name="ReclamationPaiement", fields={
+        "description": serializers.CharField(min_length=10, max_length=2000),
+    }),
+    responses={
+        201: inline_serializer(name="ReclamationPaiementCree", fields={
+            "reference": serializers.UUIDField(), "date_creation": serializers.DateTimeField(),
+        }),
+        400: EXEMPLE_ERREUR, 401: EXEMPLE_NON_AUTORISE, 404: EXEMPLE_ERREUR, 409: EXEMPLE_ERREUR,
+    },
+)
 @api_view(["POST"])
 @permission_classes([EstCommercantAuthentifie])
 def reclamation_paiement_abonnement(request, reference):
@@ -1087,6 +1138,14 @@ def reclamation_paiement_abonnement(request, reference):
 
 
 @csrf_exempt
+@extend_schema(
+    tags=["Système"], summary="Recevoir les notifications signées de FedaPay",
+    request=OpenApiTypes.OBJECT,
+    responses={
+        200: OpenApiResponse(description="Événement traité ou transaction inconnue ignorée."),
+        400: EXEMPLE_ERREUR, 502: EXEMPLE_ERREUR,
+    },
+)
 @api_view(["POST"])
 @authentication_classes([])
 @permission_classes([AllowAny])

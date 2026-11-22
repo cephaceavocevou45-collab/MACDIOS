@@ -60,6 +60,7 @@ class ProfilSerializer(serializers.Serializer):
             return profil.nom
         return utilisateur.nom_boutique
 
+    @extend_schema_field(serializers.URLField(allow_null=True))
     def get_logo_url(self, utilisateur):
         url = url_logo_profil(utilisateur)
         requete = self.context.get("request")
@@ -326,6 +327,7 @@ class ApprovisionnementSerializer(serializers.ModelSerializer):
                 commercant=request.user, actif=True
             )
 
+    @extend_schema_field(serializers.DecimalField(max_digits=14, decimal_places=2))
     def get_total(self, approvisionnement):
         return sum((ligne.total for ligne in approvisionnement.lignes.all()), Decimal("0"))
 

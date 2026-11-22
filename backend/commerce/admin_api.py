@@ -285,7 +285,10 @@ class ReclamationsPaiementBackOffice(generics.ListAPIView):
 class ValidationPaiementFedaPayBackOffice(VueBackOffice):
     permission_requise = "valider_paiements"
 
-    @extend_schema(tags=["Admin"], summary="Valider un paiement confirmé par FedaPay", responses={200: PaiementFedaPayAdminSerializer, 404: EXEMPLE_ERREUR, 409: EXEMPLE_ERREUR})
+    @extend_schema(
+        tags=["Admin"], summary="Valider un paiement confirmé par FedaPay", request=None,
+        responses={200: PaiementFedaPayAdminSerializer, 404: EXEMPLE_ERREUR, 409: EXEMPLE_ERREUR, 502: EXEMPLE_ERREUR},
+    )
     def post(self, request, reference):
         paiement = PaiementAbonnementHistorique.objects.filter(reference=reference).first()
         if paiement is None:
