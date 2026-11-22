@@ -8,9 +8,15 @@ export default function DicteeVocale({ onTranscription, aide, className = "" }) 
   const [transcription, setTranscription] = useState("");
   const [erreur, setErreur] = useState("");
   const reconnaissanceRef = useRef(null);
+  const dernierTexteFinalRef = useRef("");
+  const dernierTexteTraiteRef = useRef("");
+  const delaiTranscriptionRef = useRef(null);
   const { langue } = useLangue();
 
-  useEffect(() => () => reconnaissanceRef.current?.abort(), []);
+  useEffect(() => () => {
+    window.clearTimeout(delaiTranscriptionRef.current);
+    reconnaissanceRef.current?.abort();
+  }, []);
 
   function basculerEcoute() {
     if (ecouteActive) {
@@ -24,22 +30,45 @@ export default function DicteeVocale({ onTranscription, aide, className = "" }) 
     }
     setErreur("");
     setTranscription("");
+    dernierTexteFinalRef.current = "";
+    dernierTexteTraiteRef.current = "";
     const reconnaissance = new SpeechRecognition();
     reconnaissance.lang = localePourLangue(langue);
     reconnaissance.continuous = true;
     reconnaissance.interimResults = true;
+    reconnaissance.maxAlternatives = 1;
     reconnaissance.onstart = () => setEcouteActive(true);
     reconnaissance.onresult = (event) => {
-      const phrase = Array.from(event.results).map((resultat) => resultat[0].transcript).join(" ").trim();
-      setTranscription(phrase);
-      const phraseConfirmee = Array.from(event.results).filter((resultat) => resultat.isFinal)
-        .map((resultat) => resultat[0].transcript).join(" ").trim();
-      if (phraseConfirmee) onTranscription(phraseConfirmee, { final: true });
+      let phraseFinale = "";
+      let phraseProvisoire = "";
+      for (const resultat of event.results) {
+        if (resultat.isFinal) phraseFinale += `${resultat[0].transcript} `;
+        else phraseProvisoire += `${resultat[0].transcript} `;
+      }
+      phraseFinale = phraseFinale.trim();
+      setTranscription(`${phraseFinale} ${phraseProvisoire.trim()}`.trim());
+      if (phraseFinale && phraseFinale !== dernierTexteTraiteRef.current) {
+        dernierTexteFinalRef.current = phraseFinale;
+        window.clearTimeout(delaiTranscriptionRef.current);
+        delaiTranscriptionRef.current = window.setTimeout(() => {
+          dernierTexteTraiteRef.current = phraseFinale;
+          onTranscription(phraseFinale, { final: true });
+        }, 250);
+      }
     };
     reconnaissance.onerror = (event) => {
       if (event.error !== "aborted" && event.error !== "no-speech") setErreur("La dictée a échoué. Vérifiez l’autorisation du microphone puis réessayez.");
     };
-    reconnaissance.onend = () => { setEcouteActive(false); reconnaissanceRef.current = null; };
+    reconnaissance.onend = () => {
+      window.clearTimeout(delaiTranscriptionRef.current);
+      const phraseFinale = dernierTexteFinalRef.current;
+      if (phraseFinale && phraseFinale !== dernierTexteTraiteRef.current) {
+        dernierTexteTraiteRef.current = phraseFinale;
+        onTranscription(phraseFinale, { final: true });
+      }
+      setEcouteActive(false);
+      reconnaissanceRef.current = null;
+    };
     reconnaissanceRef.current = reconnaissance;
     try { reconnaissance.start(); }
     catch {

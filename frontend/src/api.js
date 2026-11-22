@@ -19,10 +19,19 @@ export const api = axios.create({
 });
 
 let jetonCSRF = "";
+let initialisationCSRFEnCours = null;
 
-export async function initialiserCSRF() {
-  const { data } = await api.get("/api/auth/csrf/");
-  jetonCSRF = data.csrfToken || "";
+export function initialiserCSRF() {
+  if (jetonCSRF) return Promise.resolve(jetonCSRF);
+  if (!initialisationCSRFEnCours) {
+    initialisationCSRFEnCours = api.get("/api/auth/csrf/")
+      .then(({ data }) => {
+        jetonCSRF = data.csrfToken || "";
+        return jetonCSRF;
+      })
+      .finally(() => { initialisationCSRFEnCours = null; });
+  }
+  return initialisationCSRFEnCours;
 }
 
 api.interceptors.request.use((config) => {

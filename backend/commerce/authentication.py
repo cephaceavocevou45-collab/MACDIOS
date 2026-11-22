@@ -75,10 +75,10 @@ class TelephoneBackend(ModelBackend):
             numero = normaliser_telephone_international(str(identifiant).strip())
         except ValidationError:
             return None
-        comptes = Commercant.objects.filter(telephone=numero)
-        if comptes.count() != 1:
+        comptes = list(Commercant.objects.filter(telephone=numero)[:2])
+        if len(comptes) != 1:
             return None
-        utilisateur = comptes.first()
+        utilisateur = comptes[0]
         if utilisateur.check_password(password) and self.user_can_authenticate(utilisateur):
             return utilisateur
         return None
