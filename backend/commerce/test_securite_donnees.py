@@ -286,7 +286,10 @@ class SecuriteEtDonneesTests(TestCase):
     def test_sauvegarde_s3_est_verifiee_et_peut_etre_restauree_directement(self):
         produit = Produit.objects.create(commercant=self.user, nom="Produit S3", prix=900, quantite_stock=3)
         cle = Fernet.generate_key().decode("ascii")
-        with patch("commerce.management.commands.sauvegarde_db.client_s3") as creer_client:
+        with (
+            patch("commerce.management.commands.sauvegarde_db.client_s3") as creer_client,
+            patch("commerce.management.commands.restaure_db.client_s3", return_value=creer_client.return_value),
+        ):
             s3 = creer_client.return_value
             s3.head_object.side_effect = lambda **kwargs: {
                 "Metadata": {"sha256": s3.put_object.call_args.kwargs["Metadata"]["sha256"]}
