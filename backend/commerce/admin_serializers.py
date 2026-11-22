@@ -4,7 +4,7 @@ from rest_framework import serializers
 from drf_spectacular.utils import extend_schema_field
 from django.utils import timezone
 
-from .models import Commercant, ConfigurationEssai, DemandePaiementManuel, JournalAudit, ModeMaintenance, ProfilSousAdmin
+from .models import Commercant, ConfigurationEssai, DemandePaiementManuel, JournalAudit, ModeMaintenance, PaiementAbonnementHistorique, ProfilSousAdmin, ReclamationPaiementAbonnement
 
 
 class ConfigurationEssaiSerializer(serializers.ModelSerializer):
@@ -97,6 +97,32 @@ class UtilisateurBackOfficeSerializer(serializers.ModelSerializer):
     def get_date_fin_abonnement(self, utilisateur):
         abonnement = getattr(utilisateur, "abonnement", None)
         return abonnement.date_fin if abonnement else None
+
+
+class PaiementFedaPayAdminSerializer(serializers.ModelSerializer):
+    nom_boutique = serializers.CharField(source="commercant.nom_boutique", read_only=True)
+    commercant_telephone = serializers.CharField(source="commercant.telephone", read_only=True)
+    commercant_email = serializers.EmailField(source="commercant.email", read_only=True, allow_null=True)
+    plan_nom = serializers.CharField(source="plan.nom", read_only=True)
+    valide_par_nom = serializers.CharField(source="valide_par.nom_boutique", read_only=True, allow_null=True)
+
+    class Meta:
+        model = PaiementAbonnementHistorique
+        fields = ["reference", "nom_boutique", "commercant_telephone", "commercant_email", "plan_nom", "montant", "statut", "fedapay_transaction_id", "date_creation", "date_confirmation_fedapay", "date_validation", "valide_par_nom"]
+        read_only_fields = fields
+
+
+class ReclamationPaiementAdminSerializer(serializers.ModelSerializer):
+    reference = serializers.UUIDField(source="paiement.reference", read_only=True)
+    nom_boutique = serializers.CharField(source="commercant.nom_boutique", read_only=True)
+    telephone = serializers.CharField(source="commercant.telephone", read_only=True)
+    plan_nom = serializers.CharField(source="paiement.plan.nom", read_only=True)
+    montant = serializers.DecimalField(source="paiement.montant", max_digits=12, decimal_places=2, read_only=True)
+
+    class Meta:
+        model = ReclamationPaiementAbonnement
+        fields = ["id", "reference", "nom_boutique", "telephone", "plan_nom", "montant", "description", "date_creation"]
+        read_only_fields = fields
 
 
 class DemandePaiementAdminSerializer(serializers.ModelSerializer):

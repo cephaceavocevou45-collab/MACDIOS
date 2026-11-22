@@ -34,6 +34,7 @@ from notifications.email import ErreurEnvoiEmail, envoyer_email
 
 from .admin_serializers import (
     AuditPlateformeSerializer, ConfigurationEssaiSerializer, DemandePaiementAdminSerializer, MotifRejetAdminSerializer,
+    PaiementFedaPayAdminSerializer, ReclamationPaiementAdminSerializer,
     SousAdminCreationSerializer, SousAdminModificationSerializer, SousAdminSerializer,
     UtilisateurBackOfficeSerializer,
 )
@@ -41,11 +42,12 @@ from .api_docs import ConnexionAdminReponseSerializer, EXEMPLE_ERREUR, ReponseLi
 from .audit import enregistrer_evenement
 from .models import (
     Abonnement, Commercant, ConfigurationEssai, DemandePaiementManuel, Dette, JournalAudit, Paiement,
-    PaiementAbonnementHistorique, ProfilSousAdmin, Vente,
+    PaiementAbonnementHistorique, ProfilSousAdmin, ReclamationPaiementAbonnement, Vente,
 )
 from .pagination import PaginationAudit
 from .permissions import PermissionBackOffice, SuperAdminUniquement
 from .services.paiement_manuel import rejeter_demande, valider_demande
+from .services.fedapay import actualiser_paiement, valider_paiement_confirme
 from .serializers import ConnexionSerializer
 from .throttles import ThrottleConnexionAdmin
 
@@ -241,6 +243,60 @@ class PaiementsEnAttenteBackOffice(generics.ListAPIView):
         return DemandePaiementManuel.objects.filter(
             statut=DemandePaiementManuel.Statut.EN_ATTENTE,
         ).select_related("commercant", "plan").order_by("date_demande")
+
+
+class PaiementsFedaPayBackOffice(generics.ListAPIView):
+    permission_classes = [PermissionBackOffice]
+    permission_requise = "valider_paiements"
+    serializer_class = PaiementFedaPayAdminSerializer
+    pagination_class = PaginationAudit
+
+    def get_queryset(self):
+        queryset = PaiementAbonnementHistorique.objects.select_related("commercant", "plan", "valide_par")
+        statut = self.request.query_params.get("statut", "")
+        statuts = {
+            PaiementAbonnementHistorique.Statut.A_VALIDER,
+            PaiementAbonnementHistorique.Statut.REUSSI,
+            PaiementAbonnementHistorique.Statut.ECHOUE,
+            PaiementAbonnementHistorique.Statut.ANNULE,
+            PaiementAbonnementHistorique.Statut.EN_ATTENTE,
+        }
+        if statut:
+            if statut == "echecs":
+                queryset = queryset.filter(statut__in={
+                    PaiementAbonnementHistorique.Statut.ECHOUE,
+                    PaiementAbonnementHistorique.Statut.ANNULE,
+                })
+            elif statut not in statuts:
+                raise serializers.ValidationError({"statut": "Statut de paiement invalide."})
+            else:
+                queryset = queryset.filter(statut=statut)
+        return queryset.order_by("-date_creation")
+
+
+class ReclamationsPaiementBackOffice(generics.ListAPIView):
+    permission_classes = [PermissionBackOffice]
+    permission_requise = "valider_paiements"
+    serializer_class = ReclamationPaiementAdminSerializer
+    pagination_class = PaginationAudit
+    queryset = ReclamationPaiementAbonnement.objects.select_related("paiement__plan", "commercant").all()
+
+
+class ValidationPaiementFedaPayBackOffice(VueBackOffice):
+    permission_requise = "valider_paiements"
+
+    @extend_schema(tags=["Admin"], summary="Valider un paiement confirmé par FedaPay", responses={200: PaiementFedaPayAdminSerializer, 404: EXEMPLE_ERREUR, 409: EXEMPLE_ERREUR})
+    def post(self, request, reference):
+        paiement = PaiementAbonnementHistorique.objects.filter(reference=reference).first()
+        if paiement is None:
+            raise Http404
+        # Une vérification fraîche auprès de FedaPay empêche de valider sur la seule base du navigateur.
+        if paiement.statut in {PaiementAbonnementHistorique.Statut.EN_ATTENTE, PaiementAbonnementHistorique.Statut.A_VALIDER}:
+            actualiser_paiement(paiement)
+        paiement, modifie = valider_paiement_confirme(paiement.pk, request.user)
+        if not modifie:
+            return Response({"detail": "FedaPay n'a pas confirmé ce paiement ou il a déjà été traité."}, status=status.HTTP_409_CONFLICT)
+        return Response(PaiementFedaPayAdminSerializer(paiement).data)
 
 
 class DecisionPaiementBackOffice(VueBackOffice):

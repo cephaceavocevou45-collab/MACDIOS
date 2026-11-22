@@ -397,8 +397,10 @@ class Abonnement(models.Model):
 class PaiementAbonnementHistorique(models.Model):
     class Statut(models.TextChoices):
         EN_ATTENTE = "en_attente", "En attente"
+        A_VALIDER = "a_valider", "À valider par l'équipe"
         REUSSI = "reussi", "Réussi"
         ECHOUE = "echoue", "Échoué"
+        ANNULE = "annule", "Annulé"
 
     commercant = models.ForeignKey(Commercant, on_delete=models.CASCADE, related_name="historique_paiements_abonnement")
     plan = models.ForeignKey(Plan, on_delete=models.PROTECT, related_name="historique_paiements_abonnement")
@@ -406,6 +408,9 @@ class PaiementAbonnementHistorique(models.Model):
     statut = models.CharField(max_length=12, choices=Statut.choices, default=Statut.EN_ATTENTE)
     reference = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
     fedapay_transaction_id = models.CharField(max_length=64, null=True, blank=True, unique=True)
+    checkout_url = models.URLField(max_length=1000, blank=True, editable=False)
+    date_confirmation_fedapay = models.DateTimeField(null=True, blank=True)
+    valide_par = models.ForeignKey("commerce.Commercant", null=True, blank=True, on_delete=models.SET_NULL, related_name="paiements_abonnement_valides")
     date_creation = models.DateTimeField(auto_now_add=True)
     date_validation = models.DateTimeField(null=True, blank=True)
 
@@ -414,6 +419,21 @@ class PaiementAbonnementHistorique(models.Model):
 
     def __str__(self):
         return f"{self.reference} — {self.get_statut_display()}"
+
+
+class ReclamationPaiementAbonnement(models.Model):
+    """Signalement d'un problème rencontré lors d'un paiement FedaPay annulé."""
+
+    paiement = models.OneToOneField(PaiementAbonnementHistorique, on_delete=models.CASCADE, related_name="reclamation")
+    commercant = models.ForeignKey(Commercant, on_delete=models.CASCADE, related_name="reclamations_paiement")
+    description = models.TextField(max_length=2000)
+    date_creation = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-date_creation"]
+
+    def __str__(self):
+        return f"Réclamation {self.paiement.reference} — {self.commercant}"
 
 
 def preuve_abonnement_upload_to(instance, nom_fichier):

@@ -6,7 +6,8 @@ from .admin_api import (
     ActionUtilisateurBackOffice, AuditPlateformeBackOffice, ConfigurationOffreEssaiBackOffice,
     DecisionPaiementBackOffice, DetailSousAdminBackOffice,
     GestionSousAdminsBackOffice, ListeUtilisateursBackOffice,
-    PaiementsEnAttenteBackOffice, PreuvePaiementBackOffice,
+    PaiementsEnAttenteBackOffice, PaiementsFedaPayBackOffice, ReclamationsPaiementBackOffice,
+    PreuvePaiementBackOffice, ValidationPaiementFedaPayBackOffice,
     StatistiquesPlateforme, connexion_backoffice,
 )
 from .maintenance_api import ModeMaintenanceBackOffice
@@ -21,6 +22,9 @@ urlpatterns = [
     path("utilisateurs/<uuid:pk>/suspendre/", ActionUtilisateurBackOffice.as_view(), {"action": "suspendre"}, name="admin-utilisateur-suspendre"),
     path("utilisateurs/<uuid:pk>/reactiver/", ActionUtilisateurBackOffice.as_view(), {"action": "reactiver"}, name="admin-utilisateur-reactiver"),
     path("paiements-en-attente/", PaiementsEnAttenteBackOffice.as_view(), name="admin-paiements-en-attente"),
+    path("paiements-fedapay/", PaiementsFedaPayBackOffice.as_view(), name="admin-paiements-fedapay"),
+    path("paiements-fedapay/<uuid:reference>/valider/", ValidationPaiementFedaPayBackOffice.as_view(), name="admin-paiement-fedapay-valider"),
+    path("reclamations-paiement/", ReclamationsPaiementBackOffice.as_view(), name="admin-reclamations-paiement"),
     path("paiements-en-attente/<int:pk>/preuve/", PreuvePaiementBackOffice.as_view(), name="admin-paiement-preuve"),
     path("paiements-en-attente/<int:pk>/valider/", DecisionPaiementBackOffice.as_view(), {"action": "valider"}, name="admin-paiement-valider"),
     path("paiements-en-attente/<int:pk>/rejeter/", DecisionPaiementBackOffice.as_view(), {"action": "rejeter"}, name="admin-paiement-rejeter"),

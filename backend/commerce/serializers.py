@@ -539,7 +539,7 @@ class PaiementAbonnementHistoriqueSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = PaiementAbonnementHistorique
-        fields = ["reference", "plan", "plan_nom", "montant", "statut", "date_creation", "date_validation"]
+        fields = ["reference", "plan", "plan_nom", "montant", "statut", "date_creation", "date_confirmation_fedapay", "date_validation"]
         read_only_fields = fields
 
 

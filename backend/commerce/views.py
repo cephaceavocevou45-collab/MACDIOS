@@ -42,7 +42,7 @@ from .api_docs import (
 from .audit import enregistrer_evenement, suspendre_audit
 from .branding import NOM_APPLICATION
 from .idempotence import CreationIdempotenteMixin
-from .models import Abonnement, Approvisionnement, Client, ConfigurationEssai, CorrectionDette, DemandePaiementManuel, Dette, Fournisseur, JournalAudit, LigneApprovisionnement, MouvementStock, Paiement, PaiementAbonnementHistorique, Plan, Produit, Vente
+from .models import Abonnement, Approvisionnement, Client, ConfigurationEssai, CorrectionDette, DemandePaiementManuel, Dette, Fournisseur, JournalAudit, LigneApprovisionnement, MouvementStock, Paiement, PaiementAbonnementHistorique, Plan, Produit, ReclamationPaiementAbonnement, Vente
 from .pagination import PaginationAudit, PaginationStandard
 from .permissions import AbonnementAutoriseEcriture, EstCommercantAuthentifie, EstProprietaireObjet
 from .authentication import verifier_csrf
@@ -53,7 +53,7 @@ from .jwt_sessions import (
 from .services.export_pdf import construire_export_pdf
 from .services.profil_image import logo_profil_pour_pdf, supprimer_logo_profil
 from .services.recu_pdf import construire_recu_certifie
-from .services.fedapay import actualiser_paiement, creer_paiement
+from .services.fedapay import actualiser_paiement, creer_paiement, creer_url_checkout
 from .throttles import (
     ThrottleConnexion, ThrottleInscription, ThrottleRefresh,
     ThrottleVerificationDocument,
@@ -963,6 +963,15 @@ def offre_essai(request):
 @api_view(["GET"])
 @permission_classes([EstCommercantAuthentifie])
 def historique_abonnement(request):
+    paiement_en_cours = PaiementAbonnementHistorique.objects.filter(
+        commercant=request.user, statut=PaiementAbonnementHistorique.Statut.EN_ATTENTE,
+    ).select_related("plan").first()
+    if paiement_en_cours:
+        try:
+            actualiser_paiement(paiement_en_cours)
+        except APIException:
+            # L'historique reste accessible même si FedaPay ne répond pas.
+            logger.info("Synchronisation FedaPay indisponible à l'ouverture de l'historique.")
     paiements = PaiementAbonnementHistorique.objects.filter(commercant=request.user).select_related("plan")
     return _reponse_liste_paginee(request, paiements, PaiementAbonnementHistoriqueSerializer)
 
@@ -982,7 +991,10 @@ def creer_paiement_abonnement(request):
         return Response({"detail": "Cette formule n'est pas disponible."}, status=status.HTTP_404_NOT_FOUND)
     if plan.prix != plan.prix.to_integral_value():
         return Response({"detail": "Le prix de cette formule doit être un montant entier en FCFA."}, status=status.HTTP_400_BAD_REQUEST)
-    if PaiementAbonnementHistorique.objects.filter(commercant=request.user, statut=PaiementAbonnementHistorique.Statut.EN_ATTENTE).exists():
+    if PaiementAbonnementHistorique.objects.filter(
+        commercant=request.user,
+        statut__in=[PaiementAbonnementHistorique.Statut.EN_ATTENTE, PaiementAbonnementHistorique.Statut.A_VALIDER],
+    ).exists():
         return Response({"detail": "Un paiement est déjà en attente. Revenez à la page abonnement pour vérifier son état."}, status=status.HTTP_409_CONFLICT)
     paiement = PaiementAbonnementHistorique.objects.create(commercant=request.user, plan=plan, montant=plan.prix)
     try:
@@ -1003,7 +1015,64 @@ def verifier_paiement_abonnement(request, reference):
         return Response({"detail": "Paiement introuvable."}, status=status.HTTP_404_NOT_FOUND)
     if paiement.statut == PaiementAbonnementHistorique.Statut.EN_ATTENTE:
         paiement = actualiser_paiement(paiement)
+    return Response({"reference": str(paiement.reference), "statut": paiement.statut,
+                     "nom_boutique": request.user.nom_boutique, "plan_nom": paiement.plan.nom,
+                     "montant": paiement.montant,
+                     "reclamation_deja_envoyee": hasattr(paiement, "reclamation")})
+
+
+@extend_schema(tags=["Abonnement"], summary="Reprendre un paiement FedaPay en attente")
+@api_view(["POST"])
+@permission_classes([EstCommercantAuthentifie])
+def reprendre_paiement_abonnement(request, reference):
+    paiement = PaiementAbonnementHistorique.objects.filter(reference=reference, commercant=request.user).first()
+    if paiement is None:
+        return Response({"detail": "Paiement introuvable."}, status=status.HTTP_404_NOT_FOUND)
+    if paiement.statut == PaiementAbonnementHistorique.Statut.EN_ATTENTE:
+        paiement = actualiser_paiement(paiement)
+    if paiement.statut != PaiementAbonnementHistorique.Statut.EN_ATTENTE:
+        return Response({"statut": paiement.statut, "detail": "Ce paiement ne peut plus être repris. Actualisez son état."}, status=status.HTTP_409_CONFLICT)
+    if not paiement.checkout_url:
+        paiement.checkout_url = creer_url_checkout(paiement)
+    return Response({"statut": paiement.statut, "checkout_url": paiement.checkout_url})
+
+
+@extend_schema(tags=["Abonnement"], summary="Annuler le suivi local d'un paiement en attente")
+@api_view(["POST"])
+@permission_classes([EstCommercantAuthentifie])
+def annuler_paiement_abonnement(request, reference):
+    paiement = PaiementAbonnementHistorique.objects.filter(reference=reference, commercant=request.user).first()
+    if paiement is None:
+        return Response({"detail": "Paiement introuvable."}, status=status.HTTP_404_NOT_FOUND)
+    if paiement.statut == PaiementAbonnementHistorique.Statut.EN_ATTENTE:
+        paiement = actualiser_paiement(paiement)
+    with transaction.atomic():
+        paiement = PaiementAbonnementHistorique.objects.select_for_update().get(pk=paiement.pk)
+        if paiement.statut != PaiementAbonnementHistorique.Statut.EN_ATTENTE:
+            return Response({"statut": paiement.statut, "detail": "FedaPay a déjà mis à jour l'état de ce paiement."}, status=status.HTTP_409_CONFLICT)
+        paiement.statut = PaiementAbonnementHistorique.Statut.ANNULE
+        paiement.save(update_fields=["statut"])
     return Response({"reference": str(paiement.reference), "statut": paiement.statut})
+
+
+@extend_schema(tags=["Abonnement"], summary="Signaler un problème après l'annulation d'un paiement")
+@api_view(["POST"])
+@permission_classes([EstCommercantAuthentifie])
+def reclamation_paiement_abonnement(request, reference):
+    paiement = PaiementAbonnementHistorique.objects.filter(reference=reference, commercant=request.user).first()
+    if paiement is None:
+        return Response({"detail": "Paiement introuvable."}, status=status.HTTP_404_NOT_FOUND)
+    if paiement.statut not in {PaiementAbonnementHistorique.Statut.ANNULE, PaiementAbonnementHistorique.Statut.ECHOUE}:
+        return Response({"detail": "Annulez d'abord ce paiement pour signaler un problème."}, status=status.HTTP_409_CONFLICT)
+    description = str(request.data.get("description", "")).strip()
+    if len(description) < 10 or len(description) > 2000:
+        return Response({"description": "Décrivez le problème en 10 à 2 000 caractères."}, status=status.HTTP_400_BAD_REQUEST)
+    reclamation, creee = ReclamationPaiementAbonnement.objects.get_or_create(
+        paiement=paiement, defaults={"commercant": request.user, "description": description},
+    )
+    if not creee:
+        return Response({"detail": "Un signalement existe déjà pour ce paiement."}, status=status.HTTP_409_CONFLICT)
+    return Response({"reference": str(paiement.reference), "date_creation": reclamation.date_creation}, status=status.HTTP_201_CREATED)
 
 
 @csrf_exempt

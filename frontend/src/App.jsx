@@ -14,6 +14,7 @@ import NouvelleVente from "./pages/NouvelleVente";
 import Produits from "./pages/Produits";
 import TableauDeBord from "./pages/TableauDeBord";
 import Abonnement from "./pages/Abonnement";
+import ReclamationPaiement from "./pages/ReclamationPaiement";
 import HistoriqueActivite from "./pages/HistoriqueActivite";
 import PageLegale from "./pages/PageLegale";
 import DonneesCompte from "./pages/DonneesCompte";
@@ -160,6 +161,7 @@ function RoutesApplication() {
         <Route path="/clients" element={<Clients/>}/>
         <Route path="/clients/:id" element={<DetailClient/>}/>
         <Route path="/abonnement" element={<Abonnement/>}/>
+        <Route path="/abonnement/reclamation/:reference" element={<ReclamationPaiement/>}/>
         <Route path="/activite" element={<HistoriqueActivite/>}/>
         <Route path="/compte/donnees" element={<DonneesCompte/>}/>
         <Route path="/profil" element={<MonProfil/>}/>

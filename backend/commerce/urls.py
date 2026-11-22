@@ -9,6 +9,7 @@ from .views import (
     recu_abonnement_manuel, offre_essai, jeton_csrf, session_authentifiee, deconnexion,
     profil_courant, supprimer_logo_profil_courant, creer_paiement_abonnement,
     verifier_paiement_abonnement, webhook_fedapay,
+    reprendre_paiement_abonnement, annuler_paiement_abonnement, reclamation_paiement_abonnement,
 )
 from .maintenance_api import MaintenanceDeploiement, statut_maintenance, version_deployee
 
@@ -49,6 +50,9 @@ urlpatterns = [
     path("abonnement/transactions/", historique_abonnement, name="abonnement-transactions"),
     path("abonnement/paiements/", creer_paiement_abonnement, name="abonnement-paiement-creer"),
     path("abonnement/paiements/<uuid:reference>/", verifier_paiement_abonnement, name="abonnement-paiement-verifier"),
+    path("abonnement/paiements/<uuid:reference>/reprendre/", reprendre_paiement_abonnement, name="abonnement-paiement-reprendre"),
+    path("abonnement/paiements/<uuid:reference>/annuler/", annuler_paiement_abonnement, name="abonnement-paiement-annuler"),
+    path("abonnement/paiements/<uuid:reference>/reclamation/", reclamation_paiement_abonnement, name="abonnement-paiement-reclamation"),
     path("webhooks/fedapay/", webhook_fedapay, name="webhook-fedapay"),
     path("abonnement/demandes/", demandes_paiement_abonnement, name="abonnement-demandes"),
     path("abonnement/demandes/<int:pk>/preuve/", preuve_demande_abonnement, name="abonnement-demande-preuve"),

@@ -64,11 +64,21 @@ def creer_paiement(paiement):
         raise FedaPayErreur()
     paiement.fedapay_transaction_id = str(identifiant)
     paiement.save(update_fields=["fedapay_transaction_id"])
+    return creer_url_checkout(paiement, identifiant)
+
+
+def creer_url_checkout(paiement, identifiant=None):
+    """Génère ou régénère un lien de paiement pour une transaction existante."""
+    identifiant = identifiant or paiement.fedapay_transaction_id
+    if not identifiant:
+        raise FedaPayErreur()
     token = _requete("POST", f"/transactions/{identifiant}/token", payload={})
     token_data = _data(token)
     url = token_data.get("url") or token_data.get("token_url") or token_data.get("payment_url")
     if not url or not str(url).startswith("https://"):
         raise FedaPayErreur()
+    paiement.checkout_url = str(url)
+    paiement.save(update_fields=["checkout_url"])
     return url
 
 
@@ -90,25 +100,18 @@ def synchroniser_paiement(paiement, donnees_fedapay):
         return paiement
     etat = str(donnees_fedapay.get("status", "")).lower()
     if etat == "approved" and paiement.statut != PaiementAbonnementHistorique.Statut.REUSSI:
-        abonnement = Abonnement.objects.select_for_update().get(commercant=paiement.commercant)
-        maintenant = timezone.now()
-        debut = max(maintenant, abonnement.date_fin)
-        abonnement.plan = paiement.plan
-        abonnement.statut = Abonnement.Statut.ACTIF
-        abonnement.date_debut = debut
-        abonnement.date_fin = debut + timedelta(days=paiement.plan.duree_jours)
-        abonnement.save(update_fields=["plan", "statut", "date_debut", "date_fin"])
-        paiement.statut = PaiementAbonnementHistorique.Statut.REUSSI
-        paiement.date_validation = maintenant
-        paiement.save(update_fields=["statut", "date_validation"])
-        enregistrer_evenement(
-            commercant=paiement.commercant, utilisateur=paiement.commercant,
-            action=JournalAudit.Action.CHANGEMENT_ABONNEMENT,
-            objet_type="PaiementAbonnementHistorique", objet_id=paiement.pk,
-            nouvelles_valeurs={"decision": "paiement_fedapay_verifie", "plan_id": paiement.plan_id,
-                               "reference": str(paiement.reference), "date_fin": abonnement.date_fin.isoformat()},
-        )
-    elif etat in {"declined", "canceled", "cancelled"} and paiement.statut == PaiementAbonnementHistorique.Statut.EN_ATTENTE:
+        if paiement.statut != PaiementAbonnementHistorique.Statut.A_VALIDER:
+            paiement.statut = PaiementAbonnementHistorique.Statut.A_VALIDER
+            paiement.date_confirmation_fedapay = timezone.now()
+            paiement.save(update_fields=["statut", "date_confirmation_fedapay"])
+            enregistrer_evenement(
+                commercant=paiement.commercant, utilisateur=paiement.commercant,
+                action=JournalAudit.Action.CHANGEMENT_ABONNEMENT,
+                objet_type="PaiementAbonnementHistorique", objet_id=paiement.pk,
+                nouvelles_valeurs={"decision": "paiement_fedapay_confirme_a_valider", "plan_id": paiement.plan_id,
+                                   "reference": str(paiement.reference)},
+            )
+    elif etat in {"declined", "canceled", "cancelled", "failed", "expired"} and paiement.statut == PaiementAbonnementHistorique.Statut.EN_ATTENTE:
         paiement.statut = PaiementAbonnementHistorique.Statut.ECHOUE
         paiement.save(update_fields=["statut"])
     return paiement
@@ -119,3 +122,31 @@ def actualiser_paiement(paiement):
         return paiement
     reponse = _requete("GET", f"/transactions/{paiement.fedapay_transaction_id}")
     return synchroniser_paiement(paiement, _data(reponse))
+
+
+@transaction.atomic
+def valider_paiement_confirme(paiement_id, administrateur):
+    """Active l'abonnement uniquement après confirmation FedaPay et validation admin."""
+    paiement = PaiementAbonnementHistorique.objects.select_for_update().select_related("plan", "commercant").get(pk=paiement_id)
+    if paiement.statut != PaiementAbonnementHistorique.Statut.A_VALIDER:
+        return paiement, False
+    abonnement = Abonnement.objects.select_for_update().get(commercant=paiement.commercant)
+    maintenant = timezone.now()
+    debut = max(maintenant, abonnement.date_fin)
+    abonnement.plan = paiement.plan
+    abonnement.statut = Abonnement.Statut.ACTIF
+    abonnement.date_debut = debut
+    abonnement.date_fin = debut + timedelta(days=paiement.plan.duree_jours)
+    abonnement.save(update_fields=["plan", "statut", "date_debut", "date_fin"])
+    paiement.statut = PaiementAbonnementHistorique.Statut.REUSSI
+    paiement.valide_par = administrateur
+    paiement.date_validation = maintenant
+    paiement.save(update_fields=["statut", "valide_par", "date_validation"])
+    enregistrer_evenement(
+        commercant=paiement.commercant, utilisateur=administrateur,
+        action=JournalAudit.Action.VALIDATION_PAIEMENT_ADMIN,
+        objet_type="PaiementAbonnementHistorique", objet_id=paiement.pk,
+        nouvelles_valeurs={"decision": "paiement_fedapay_valide", "plan_id": paiement.plan_id,
+                           "reference": str(paiement.reference), "date_fin": abonnement.date_fin.isoformat()},
+    )
+    return paiement, True

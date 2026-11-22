@@ -221,6 +221,8 @@ button { cursor: pointer; }
 @keyframes admin-shimmer { to { background-position-x:-250%; } }
 .admin-payment-summary { display:grid; gap:5px; margin-bottom:13px; border:1px solid var(--admin-line); border-radius:6px; background:#f8fafb; padding:11px; color:#4b5b6c; font-size:11px; }
 .admin-payment-summary small { color:#788797; }
+.admin-payment-tabs { display:flex; flex-wrap:wrap; gap:8px; margin:0 0 14px; }
+.admin-payment-complaint { min-width:240px; max-width:520px; white-space:pre-wrap; overflow-wrap:anywhere; }
 .admin-modal-backdrop { position:fixed; z-index:60; inset:0; display:grid; place-items:center; overflow:auto; background:rgb(20 32 46 / 42%); padding:18px; }
 .admin-modal { width:min(480px,100%); max-height:90vh; overflow:auto; border:1px solid #e2e7ec; border-radius:9px; background:#fff; padding:17px; box-shadow:0 20px 65px rgb(12 26 43 / 23%); }
 .admin-modal > header { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:13px; }

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { api, messageErreur } from "../api";
 import Badge from "../composants/Badge";
 import Button from "../composants/Button";
@@ -13,6 +13,7 @@ import { localePourLangue, TexteLocalise, useLangue } from "../contexte/LangueCo
 
 export default function Abonnement() {
   const { langue } = useLangue();
+  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const fcfa = (montant) => `${Number(montant || 0).toLocaleString(localePourLangue(langue))} FCFA`;
   const dateLocale = (valeur, avecHeure = false) => new Intl.DateTimeFormat(
@@ -25,6 +26,8 @@ export default function Abonnement() {
   const [chargement, setChargement] = useState(true);
   const [planEnCours, setPlanEnCours] = useState(null);
   const [erreur, setErreur] = useState("");
+  const [retourPaiement, setRetourPaiement] = useState(null);
+  const [transactionAction, setTransactionAction] = useState(null);
   const [planPage, setPlanPage] = useState(1);
   const [transactionPage, setTransactionPage] = useState(1);
   const [nombrePlans, setNombrePlans] = useState(0);
@@ -53,9 +56,11 @@ export default function Abonnement() {
     if (!reference) return;
     api.get(`/api/abonnement/paiements/${reference}/`)
       .then(({ data }) => {
-        if (data.statut === "reussi") notifier("Paiement confirmé. Votre abonnement est actif.", "success");
-        else if (data.statut === "echoue") notifier("Le paiement n’a pas abouti. Vous pouvez réessayer.", "error");
-        else notifier("Paiement en cours de confirmation. Revenez dans un instant.", "info");
+        setRetourPaiement(data);
+        if (data.statut === "reussi") notifier(`Merci ${data.nom_boutique}, votre paiement est validé et votre abonnement est actif.`, "success");
+        else if (data.statut === "a_valider") notifier(`Merci ${data.nom_boutique}, FedaPay a confirmé le paiement. L'équipe le validera avant l'activation de l'abonnement.`, "success");
+        else if (data.statut === "echoue") notifier("FedaPay indique que le paiement a échoué. Vous pouvez choisir une nouvelle formule.", "error");
+        else notifier("FedaPay n'a pas encore confirmé le paiement. Vous pouvez le reprendre ou vérifier son état.", "info");
         return charger();
       })
       .catch((e) => notifier(messageErreur(e), "error"))
@@ -87,8 +92,37 @@ export default function Abonnement() {
     try {
       const { data } = await api.get(`/api/abonnement/paiements/${reference}/`);
       await charger();
-      notifier(data.statut === "reussi" ? "Paiement confirmé. Votre abonnement est actif." : data.statut === "echoue" ? "Le paiement n’a pas abouti." : "Le paiement est toujours en cours de confirmation.", data.statut === "reussi" ? "success" : "info");
+      const message = data.statut === "reussi"
+        ? `Merci ${data.nom_boutique}, votre paiement est validé et votre abonnement est actif.`
+        : data.statut === "a_valider"
+          ? `Merci ${data.nom_boutique}, FedaPay a confirmé le paiement. L'équipe le validera avant l'activation de l'abonnement.`
+          : data.statut === "echoue" ? "Le paiement a échoué. Vous pouvez choisir une nouvelle formule."
+            : data.statut === "annule" ? "Ce paiement a été annulé. Vous pouvez signaler le problème depuis la page dédiée."
+              : "FedaPay n'a pas encore confirmé le paiement. Vous pouvez le reprendre ou vérifier son état.";
+      setRetourPaiement(data);
+      notifier(message, data.statut === "reussi" || data.statut === "a_valider" ? "success" : data.statut === "echoue" ? "error" : "info");
     } catch (e) { notifier(messageErreur(e), "error"); }
+  }
+
+  async function reprendrePaiement(reference) {
+    setTransactionAction(reference);
+    try {
+      const { data } = await api.post(`/api/abonnement/paiements/${reference}/reprendre/`);
+      if (data.statut === "en_attente" && data.checkout_url) window.location.assign(data.checkout_url);
+      else { await charger(); notifier("FedaPay a déjà mis à jour l'état du paiement.", "info"); }
+    } catch (e) { notifier(messageErreur(e), "error"); await charger(); }
+    finally { setTransactionAction(null); }
+  }
+
+  async function annulerPaiement(reference) {
+    const confirme = window.confirm("Arrêter le suivi de ce paiement dans MACDIOS ? FedaPay sera interrogé avant l’annulation. Une demande déjà transmise à votre opérateur peut encore être traitée; toute confirmation FedaPay ultérieure sera prise en compte. Vous pourrez ensuite signaler le problème.");
+    if (!confirme) return;
+    setTransactionAction(reference);
+    try {
+      await api.post(`/api/abonnement/paiements/${reference}/annuler/`);
+      navigate(`/abonnement/reclamation/${reference}`);
+    } catch (e) { notifier(messageErreur(e), "error"); await charger(); }
+    finally { setTransactionAction(null); }
   }
 
   if (chargement) return <Chargement texte="Chargement de votre abonnement…"/>;
@@ -99,6 +133,13 @@ export default function Abonnement() {
         <div><span className="eyebrow">{<TexteLocalise phrase={"Mon compte"} />}</span><h1 className="workspace-title">{<TexteLocalise phrase={"Abonnement"} />}</h1><p className="workspace-subtitle">{<TexteLocalise phrase={"Consultez votre accès et choisissez une formule."} />}</p></div>
       </div>
       <Erreur texte={erreur}/>
+      {retourPaiement && <Card role="status" className={`subscription-payment-notice ${retourPaiement.statut}`}>
+        {retourPaiement.statut === "a_valider" && <><strong>Merci {retourPaiement.nom_boutique}, FedaPay a confirmé la réception de votre paiement.</strong><p>L'équipe MACDIOS va vérifier et valider la transaction. Votre abonnement sera activé après cette validation.</p></>}
+        {retourPaiement.statut === "reussi" && <><strong>Merci {retourPaiement.nom_boutique}, votre paiement est validé.</strong><p>Votre abonnement est actif.</p></>}
+        {retourPaiement.statut === "en_attente" && <><strong>Le paiement n'est pas encore confirmé par FedaPay.</strong><p>Reprenez le paiement ou vérifiez son état. Ne relancez pas un deuxième paiement.</p></>}
+        {retourPaiement.statut === "echoue" && <><strong>FedaPay indique que le paiement a échoué.</strong><p>Vous pouvez réessayer avec une formule.</p></>}
+        {retourPaiement.statut === "annule" && <><strong>Le suivi de ce paiement a été arrêté dans MACDIOS.</strong><p>Une demande déjà transmise à votre opérateur peut encore être traitée. MACDIOS prendra en compte toute confirmation reçue de FedaPay. Si une étape n’a pas fonctionné, signalez-le à l’équipe.</p><Link className="btn-ghost" to={`/abonnement/reclamation/${retourPaiement.reference}`}>Signaler un problème</Link></>}
+      </Card>}
 
       {abonnement && <Card className="subscription-current">
         <div className="flex flex-wrap items-start justify-between gap-4">
@@ -136,8 +177,9 @@ export default function Abonnement() {
           <div className="grid gap-3">{transactions.map((transaction) => <Card key={transaction.reference} className="subscription-history-row">
             <div><strong>{transaction.plan_nom}</strong><small>{dateLocale(transaction.date_creation, true)}</small></div>
             <strong>{fcfa(transaction.montant)}</strong>
-            <Badge tone={transaction.statut === "reussi" ? "green" : transaction.statut === "echoue" ? "red" : "orange"}>{transaction.statut === "reussi" ? "Réussi" : transaction.statut === "echoue" ? "Échoué" : "En attente"}</Badge>
-            {transaction.statut === "en_attente" && <Button variant="secondary" onClick={() => verifierPaiement(transaction.reference)}>Vérifier l’état</Button>}
+            <Badge tone={transaction.statut === "reussi" ? "green" : ["echoue", "annule"].includes(transaction.statut) ? "red" : "orange"}>{({ reussi: "Validé", a_valider: "À valider par l'équipe", echoue: "Échoué", annule: "Annulé", en_attente: "En attente de FedaPay" })[transaction.statut] || transaction.statut}</Badge>
+            {transaction.statut === "en_attente" && <div className="subscription-payment-actions"><Button disabled={transactionAction !== null} onClick={() => reprendrePaiement(transaction.reference)}>{transactionAction === transaction.reference ? "Ouverture…" : "Poursuivre le paiement"}</Button><Button variant="secondary" disabled={transactionAction !== null} onClick={() => verifierPaiement(transaction.reference)}>Vérifier l’état</Button><Button variant="secondary" disabled={transactionAction !== null} onClick={() => annulerPaiement(transaction.reference)}>Annuler le paiement</Button></div>}
+            {["annule", "echoue"].includes(transaction.statut) && <Link className="btn-ghost" to={`/abonnement/reclamation/${transaction.reference}`}>Signaler un problème</Link>}
           </Card>)}</div>}
         <Pagination page={transactionPage} count={nombreTransactions} onChange={setTransactionPage}/>
       </section>
