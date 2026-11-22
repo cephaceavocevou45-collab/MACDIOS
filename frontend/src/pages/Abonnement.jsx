@@ -134,9 +134,9 @@ export default function Abonnement() {
       </div>
       <Erreur texte={erreur}/>
       {retourPaiement && <Card role="status" className={`subscription-payment-notice ${retourPaiement.statut}`}>
-        {retourPaiement.statut === "a_valider" && <><strong>Merci {retourPaiement.nom_boutique}, FedaPay a confirmé la réception de votre paiement.</strong><p>L'équipe MACDIOS va vérifier et valider la transaction. Votre abonnement sera activé après cette validation.</p></>}
+        {retourPaiement.statut === "a_valider" && <><strong>Merci {retourPaiement.nom_boutique}, FedaPay a confirmé la réception de votre paiement.</strong><p>L&apos;équipe MACDIOS va vérifier et valider la transaction. Votre abonnement sera activé après cette validation.</p></>}
         {retourPaiement.statut === "reussi" && <><strong>Merci {retourPaiement.nom_boutique}, votre paiement est validé.</strong><p>Votre abonnement est actif.</p></>}
-        {retourPaiement.statut === "en_attente" && <><strong>Le paiement n'est pas encore confirmé par FedaPay.</strong><p>Reprenez le paiement ou vérifiez son état. Ne relancez pas un deuxième paiement.</p></>}
+        {retourPaiement.statut === "en_attente" && <><strong>Le paiement n&apos;est pas encore confirmé par FedaPay.</strong><p>Reprenez le paiement ou vérifiez son état. Ne relancez pas un deuxième paiement.</p></>}
         {retourPaiement.statut === "echoue" && <><strong>FedaPay indique que le paiement a échoué.</strong><p>Vous pouvez réessayer avec une formule.</p></>}
         {retourPaiement.statut === "annule" && <><strong>Le suivi de ce paiement a été arrêté dans MACDIOS.</strong><p>Une demande déjà transmise à votre opérateur peut encore être traitée. MACDIOS prendra en compte toute confirmation reçue de FedaPay. Si une étape n’a pas fonctionné, signalez-le à l’équipe.</p><Link className="btn-ghost" to={`/abonnement/reclamation/${retourPaiement.reference}`}>Signaler un problème</Link></>}
       </Card>}
