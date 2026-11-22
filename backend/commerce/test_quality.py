@@ -34,6 +34,8 @@ class QualiteProjetTests(TestCase):
             ({"DEBUG": "", "SECRET_KEY": "cle-test"}, "DEBUG doit être explicitement", None),
             ({"DEBUG": "True", "SECRET_KEY": "cle-test"}, "DEBUG=True est interdit", None),
             ({"DEBUG": "False", "SECRET_KEY": ""}, "SECRET_KEY doit être explicitement", None),
+            ({"DEBUG": "False", "SECRET_KEY": "cle-test-securisee-pour-le-test", "SECURE_SSL_REDIRECT": "False"}, "SECURE_SSL_REDIRECT doit être activé", None),
+            ({"DEBUG": "False", "SECRET_KEY": "cle-test-securisee-pour-le-test", "SECURE_HSTS_SECONDS": "0"}, "SECURE_HSTS_SECONDS doit être au moins égal", None),
             ({"DEBUG": "False", "SECRET_KEY": "cle-test-securisee-pour-le-test", "REDIS_URL": "invalid"}, "REDIS_URL doit utiliser", None),
             ({"DEBUG": "False", "SECRET_KEY": "cle-test-securisee-pour-le-test"}, None, "django.core.cache.backends.db.DatabaseCache"),
             ({"DEBUG": "False", "SECRET_KEY": "cle-test-securisee-pour-le-test", "REDIS_URL": "redis://localhost:6379/0"}, None, "django.core.cache.backends.redis.RedisCache"),

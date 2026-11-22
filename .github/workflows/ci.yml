@@ -4,6 +4,10 @@ on:
   push:
   pull_request:
 
+# Les workflows de vérification et de déploiement n'ont besoin que de lire le dépôt.
+permissions:
+  contents: read
+
 jobs:
   backend:
     name: Tests, couverture et Ruff

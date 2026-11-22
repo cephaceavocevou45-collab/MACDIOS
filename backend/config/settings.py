@@ -317,6 +317,10 @@ CSRF_COOKIE_SECURE = EST_PRODUCTION
 SECURE_HSTS_SECONDS = config("SECURE_HSTS_SECONDS", default=0 if not EST_PRODUCTION else 31536000, cast=int)
 SECURE_HSTS_INCLUDE_SUBDOMAINS = EST_PRODUCTION
 SECURE_HSTS_PRELOAD = False
+if EST_PRODUCTION and not SECURE_SSL_REDIRECT:
+    raise ImproperlyConfigured("SECURE_SSL_REDIRECT doit être activé en production.")
+if EST_PRODUCTION and SECURE_HSTS_SECONDS < 31536000:
+    raise ImproperlyConfigured("SECURE_HSTS_SECONDS doit être au moins égal à un an en production.")
 SECURE_CONTENT_TYPE_NOSNIFF = True
 X_FRAME_OPTIONS = "DENY"
 SECURE_REFERRER_POLICY = "strict-origin-when-cross-origin"
