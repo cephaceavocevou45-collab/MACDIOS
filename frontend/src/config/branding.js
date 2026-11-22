@@ -4,6 +4,8 @@ const whatsappContact = "https://wa.me/2290157179683";
 export const branding = {
   appName: "MACDIOS",
   appShortName: "MACD",
+  // Ancien nom de l'application, encore présent comme valeur initiale sur certains profils.
+  legacyBrandNames: ["nobi"],
   appDescription: "La gestion simple de votre commerce, depuis votre téléphone.",
   logoMark: "M",
   // Palette utilisée uniquement par la page publique.
@@ -34,3 +36,10 @@ export const branding = {
     youtube: "",
   },
 };
+
+export function nomBoutiqueAffiche(nom) {
+  const valeur = String(nom || "").trim();
+  return branding.legacyBrandNames.includes(valeur.toLocaleLowerCase("fr"))
+    ? branding.appName
+    : valeur;
+}

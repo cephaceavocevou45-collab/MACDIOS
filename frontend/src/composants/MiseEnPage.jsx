@@ -1,5 +1,5 @@
 import { Link, NavLink, Outlet } from "react-router-dom";
-import { branding } from "../config/branding";
+import { branding, nomBoutiqueAffiche } from "../config/branding";
 import Icon from "./Icon";
 import NavigationBas from "./NavigationBas";
 import { useAuth } from "../contexte/AuthContext";
@@ -36,7 +36,7 @@ export function Sidebar() {
       <a href="/tableau-de-bord" className="sidebar-brand"><span className="brand-mark">{branding.logoMark}</span><span><strong>{branding.appName}</strong><small className="block text-xs font-normal text-ink-muted">{<TexteLocalise phrase={"Espace commerçant"} />}</small></span></a>
       <LiensNavigation className="sidebar-nav"/>
       <div className="sidebar-bottom">
-        <p className="truncate px-3 pb-2 text-xs text-ink-muted">{commercant?.nom_boutique || "Ma boutique"}</p>
+        <p className="truncate px-3 pb-2 text-xs text-ink-muted">{nomBoutiqueAffiche(commercant?.nom_boutique) || "Ma boutique"}</p>
         <button className="sidebar-link w-full border-0 bg-transparent text-left" onClick={deconnexion}><Icon name="logout"/>{<TexteLocalise phrase={"Déconnexion"} />}</button>
       </div>
     </aside>
@@ -50,7 +50,7 @@ export default function MiseEnPage() {
     <div className="app-workspace">
       <Sidebar/>
       <div className="workspace-main">
-        <header className="workspace-topbar"><div><strong>{commercant?.nom_boutique || "Ma boutique"}</strong><span className="ml-2 text-sm text-ink-muted">· {traduire("Votre espace de gestion", langue)}</span></div><div className="flex items-center gap-3"><SelecteurLangue compact/><AvatarProfil/><button className="btn-ghost" onClick={deconnexion}><Icon name="logout" size={17}/>{traduire("Quitter", langue)}</button></div></header>
+        <header className="workspace-topbar"><div><strong>{nomBoutiqueAffiche(commercant?.nom_boutique) || "Ma boutique"}</strong><span className="ml-2 text-sm text-ink-muted">· {traduire("Votre espace de gestion", langue)}</span></div><div className="flex items-center gap-3"><SelecteurLangue compact/><AvatarProfil/><button className="btn-ghost" onClick={deconnexion}><Icon name="logout" size={17}/>{traduire("Quitter", langue)}</button></div></header>
         <header className="workspace-mobile-header"><a className="brand-lockup" href="/tableau-de-bord"><span className="brand-mark">{branding.logoMark}</span>{branding.appName}</a><div className="flex items-center gap-2"><SelecteurLangue compact/><Link to="/parametres" className="icon-button" aria-label={traduire("Paramètres")} title={traduire("Paramètres")}><Icon name="settings"/></Link><AvatarProfil compact/><Link to="/activite" className="icon-button" aria-label={traduire("Historique d'activité")} title={traduire("Historique d'activité")}><Icon name="clock"/></Link><button className="icon-button" aria-label={traduire("Déconnexion")} onClick={deconnexion}><Icon name="logout"/></button></div></header>
         <AlerteAbonnement/>
         <main className="workspace-content"><Outlet/></main>

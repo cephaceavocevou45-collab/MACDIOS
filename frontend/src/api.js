@@ -57,7 +57,7 @@ api.interceptors.request.use((config) => {
       requetesIdempotentesEnAttente.set(signature, cle);
     }
     config.headers["Idempotency-Key"] = cle;
-    config._nobiSignatureIdempotence = signature;
+    config._macdiosSignatureIdempotence = signature;
   }
   return config;
 });
@@ -71,9 +71,9 @@ function terminerSession() {
 }
 
 function terminerCleIdempotence(config, succes) {
-  const signature = config?._nobiSignatureIdempotence;
+  const signature = config?._macdiosSignatureIdempotence;
   if (!signature) return;
-  const code = config._nobiCodeErreur;
+    const code = config._macdiosCodeErreur;
   // En cas de coupure ou d'erreur serveur, garder la clé pour sécuriser l'essai suivant.
   if (succes || (code >= 400 && code < 500 && code !== 429 && code !== 401)) {
     requetesIdempotentesEnAttente.delete(signature);
@@ -91,7 +91,7 @@ api.interceptors.response.use(
   },
   async (erreur) => {
     const requete = erreur.config;
-    if (requete) requete._nobiCodeErreur = erreur.response?.status;
+    if (requete) requete._macdiosCodeErreur = erreur.response?.status;
     if (erreur.response?.status === 503 && erreur.response?.data?.code === "maintenance_active") {
       window.dispatchEvent(new CustomEvent("maintenance-active", { detail: erreur.response.data }));
     }

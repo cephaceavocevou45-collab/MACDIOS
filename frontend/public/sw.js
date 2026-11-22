@@ -1,5 +1,5 @@
-const CACHE_ACTUEL = "gestion-commerce-shell-v2";
-const FICHIERS_HORS_LIGNE = ["/", "/offline.html", "/app-icon-192.png", "/app-icon-512.png"];
+const CACHE_ACTUEL = "gestion-commerce-shell-v3";
+const FICHIERS_HORS_LIGNE = ["/", "/offline.html", "/app-icon-192.png?v=2", "/app-icon-512.png?v=2", "/macdios-wordmark.png?v=2"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(CACHE_ACTUEL).then((cache) => cache.addAll(FICHIERS_HORS_LIGNE)));

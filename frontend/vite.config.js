@@ -29,7 +29,7 @@ const manifesteApplication = {
 
 // Ce manifeste permet à la CI de vérifier le SHA réellement servi par Railway.
 const versionDeploiement = {
-  name: "nobi-version-deploiement",
+  name: "macdios-version-deploiement",
   apply: "build",
   closeBundle() {
     const dossierSortie = resolve(process.cwd(), "dist");

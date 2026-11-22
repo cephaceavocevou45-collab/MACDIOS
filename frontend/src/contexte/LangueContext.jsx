@@ -9,8 +9,12 @@ export const LANGUES_INTERFACE = [
 ];
 
 const CONTEXTE = createContext(null);
-const CLE_LANGUE = "nobi.langue";
-const CLE_DENSITE = "nobi.densite";
+const CLE_LANGUE = "macdios.langue";
+const CLE_DENSITE = "macdios.densite";
+const ANCIENNES_CLES_PREFERENCE = {
+  [CLE_LANGUE]: "nobi.langue",
+  [CLE_DENSITE]: "nobi.densite",
+};
 let langueCourante = "fr";
 
 const TEXTES = {
@@ -986,7 +990,13 @@ export function TexteLocalise({ phrase }) {
 
 function preferenceInitiale(cle, valeurDefaut, valeursAutorisees) {
   try {
-    const valeur = window.localStorage.getItem(cle);
+    const ancienneCle = ANCIENNES_CLES_PREFERENCE[cle];
+    let valeur = window.localStorage.getItem(cle);
+    if (valeur === null && ancienneCle) {
+      valeur = window.localStorage.getItem(ancienneCle);
+      if (valeur !== null) window.localStorage.setItem(cle, valeur);
+    }
+    if (ancienneCle) window.localStorage.removeItem(ancienneCle);
     return valeursAutorisees.includes(valeur) ? valeur : valeurDefaut;
   } catch {
     return valeurDefaut;

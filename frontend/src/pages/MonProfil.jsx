@@ -5,6 +5,7 @@ import Input from "../composants/Input";
 import TelephoneInternational, { telephoneInternationalValide } from "../composants/TelephoneInternational";
 import { useToast } from "../composants/ToastProvider";
 import { useLangue, TexteLocalise, traduire } from "../contexte/LangueContext";
+import { branding, nomBoutiqueAffiche } from "../config/branding";
 
 const PROFIL_VIDE = { nom_affiche: "", email: "", telephone: "", adresse: "", ville: "", logo_url: null };
 const TYPES_IMAGE = ["image/jpeg", "image/png", "image/webp"];
@@ -22,7 +23,7 @@ export default function MonProfil() {
   useEffect(() => {
     let actif = true;
     api.get("/api/profil/")
-      .then(({ data }) => { if (actif) setProfil({ ...PROFIL_VIDE, ...data }); })
+      .then(({ data }) => { if (actif) setProfil({ ...PROFIL_VIDE, ...data, nom_affiche: nomBoutiqueAffiche(data.nom_affiche) }); })
       .catch((e) => { if (actif) setErreur(messageErreur(e)); })
       .finally(() => { if (actif) setChargement(false); });
     return () => { actif = false; };
@@ -65,7 +66,7 @@ export default function MonProfil() {
       const { data } = await api.patch("/api/profil/", donnees, {
         headers: { "Content-Type": "multipart/form-data" },
       });
-      setProfil({ ...PROFIL_VIDE, ...data });
+      setProfil({ ...PROFIL_VIDE, ...data, nom_affiche: nomBoutiqueAffiche(data.nom_affiche) });
       setFichier(null);
       window.dispatchEvent(new Event("profil-modifie"));
       notifier("Votre profil a été mis à jour.");
@@ -84,7 +85,7 @@ export default function MonProfil() {
     setEnregistrement(true);
     try {
       const { data } = await api.delete("/api/profil/photo/");
-      setProfil({ ...PROFIL_VIDE, ...data });
+      setProfil({ ...PROFIL_VIDE, ...data, nom_affiche: nomBoutiqueAffiche(data.nom_affiche) });
       window.dispatchEvent(new Event("profil-modifie"));
       notifier("Le logo a été supprimé.");
     } catch (e) {
@@ -96,8 +97,7 @@ export default function MonProfil() {
 
   if (chargement) return <section className="mx-auto max-w-3xl space-y-5" aria-label={traduire("Chargement du profil")}><div className="skeleton h-10 w-56"/><div className="skeleton h-80 rounded-2xl"/></section>;
 
-  const image = apercuLocal || profil.logo_url;
-  const initiales = profil.nom_affiche.trim().split(/\s+/).filter(Boolean).slice(0, 2).map((mot) => mot[0].toUpperCase()).join("") || "N";
+  const image = apercuLocal || profil.logo_url || "/app-icon-192.png?v=2";
 
   return <section className="mx-auto max-w-3xl space-y-6">
     <header className="space-y-2">
@@ -110,7 +110,7 @@ export default function MonProfil() {
     <form onSubmit={enregistrer} className="space-y-6 rounded-2xl border border-line bg-white p-5 shadow-card sm:p-8">
       <div className="flex flex-col items-start gap-5 border-b border-line pb-6 sm:flex-row sm:items-center">
         <div className="flex h-24 w-24 shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-brand/20 bg-brand/10 text-2xl font-bold text-brand">
-          {image ? <img src={image} alt={traduire("Aperçu du logo de profil")} className="h-full w-full object-cover"/> : initiales}
+          <img src={image} alt={profil.logo_url || apercuLocal ? traduire("Aperçu du logo de profil") : branding.appName} className="h-full w-full object-cover"/>
         </div>
         <div className="space-y-3">
           <div><h2 className="font-semibold text-ink">{<TexteLocalise phrase={"Photo ou logo"} />}</h2><p className="text-sm text-ink-muted">{<TexteLocalise phrase={"JPEG, PNG ou WebP · 2 Mo maximum. L'image sera redimensionnée et nettoyée."} />}</p></div>
